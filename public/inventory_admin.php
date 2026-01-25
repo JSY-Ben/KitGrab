@@ -23,6 +23,21 @@ $modelEditId = (int)($_GET['model_edit'] ?? 0);
 $assetEditId = 0;
 
 $statusOptions = ['available', 'checked_out', 'maintenance', 'retired'];
+$pageSize = 50;
+$page = max(1, (int)($_GET['page'] ?? 1));
+$assetsSearch = $section === 'inventory' ? trim($_GET['q'] ?? '') : '';
+$modelsSearch = $section === 'models' ? trim($_GET['q'] ?? '') : '';
+$categoriesSearch = $section === 'categories' ? trim($_GET['q'] ?? '') : '';
+$assetsSort = $section === 'inventory' ? (trim($_GET['sort'] ?? '') ?: 'tag:asc') : 'tag:asc';
+$modelsSort = $section === 'models' ? (trim($_GET['sort'] ?? '') ?: 'name:asc') : 'name:asc';
+$categoriesSort = $section === 'categories' ? (trim($_GET['sort'] ?? '') ?: 'name:asc') : 'name:asc';
+$assetsStatusFilter = $section === 'inventory' ? trim($_GET['status'] ?? '') : '';
+$assetsModelFilter = $section === 'inventory' ? trim($_GET['model'] ?? '') : '';
+if ($section === 'inventory' && $assetsModelFilter === '' && isset($_GET['asset_model'])) {
+    $assetsModelFilter = trim($_GET['asset_model']);
+}
+$modelsCategoryFilter = $section === 'models' ? trim($_GET['category'] ?? '') : '';
+$categoriesDescriptionFilter = $section === 'categories' ? trim($_GET['desc'] ?? '') : '';
 
 $uploadDirRelative = 'uploads/images';
 $uploadDir = APP_ROOT . '/public/' . $uploadDirRelative;
@@ -185,6 +200,44 @@ $handleUpload = static function (string $field) use ($uploadDir, $uploadBaseUrl)
     }
 
     return $uploadBaseUrl . $filename;
+};
+
+$buildQuery = static function (array $overrides = []) use ($section): string {
+    $params = $_GET;
+    unset($params['export'], $params['template']);
+    $params['section'] = $section;
+    foreach ($overrides as $key => $value) {
+        if ($value === null || $value === '') {
+            unset($params[$key]);
+            continue;
+        }
+        $params[$key] = $value;
+    }
+    return http_build_query($params);
+};
+
+$renderPagination = static function (array $pagination, callable $buildQuery): string {
+    $totalPages = (int)($pagination['pages'] ?? 1);
+    $current = (int)($pagination['page'] ?? 1);
+    if ($totalPages <= 1) {
+        return '';
+    }
+    $start = max(1, $current - 2);
+    $end = min($totalPages, $current + 2);
+    $html = '<nav aria-label="Pagination"><ul class="pagination pagination-sm mb-0">';
+    $prevDisabled = $current <= 1 ? ' disabled' : '';
+    $nextDisabled = $current >= $totalPages ? ' disabled' : '';
+    $prevLink = $current > 1 ? ('inventory_admin.php?' . $buildQuery(['page' => $current - 1])) : '#';
+    $nextLink = $current < $totalPages ? ('inventory_admin.php?' . $buildQuery(['page' => $current + 1])) : '#';
+    $html .= '<li class="page-item' . $prevDisabled . '"><a class="page-link" href="' . h($prevLink) . '">Prev</a></li>';
+    for ($i = $start; $i <= $end; $i++) {
+        $active = $i === $current ? ' active' : '';
+        $link = 'inventory_admin.php?' . $buildQuery(['page' => $i]);
+        $html .= '<li class="page-item' . $active . '"><a class="page-link" href="' . h($link) . '">' . $i . '</a></li>';
+    }
+    $html .= '<li class="page-item' . $nextDisabled . '"><a class="page-link" href="' . h($nextLink) . '">Next</a></li>';
+    $html .= '</ul></nav>';
+    return $html;
 };
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -649,41 +702,199 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $categories = [];
 $models = [];
 $assets = [];
+$categoriesAll = [];
+$modelsAll = [];
 $assetNotesById = [];
 $editModel = null;
+$categoriesPagination = ['page' => 1, 'pages' => 1, 'total' => 0, 'start' => 0, 'end' => 0];
+$modelsPagination = ['page' => 1, 'pages' => 1, 'total' => 0, 'start' => 0, 'end' => 0];
+$assetsPagination = ['page' => 1, 'pages' => 1, 'total' => 0, 'start' => 0, 'end' => 0];
 
 try {
-    $categories = $pdo->query('
-        SELECT c.id,
-               c.name,
-               c.description,
-               COUNT(m.id) AS model_count
-          FROM asset_categories c
-          LEFT JOIN asset_models m ON m.category_id = c.id
-         GROUP BY c.id, c.name, c.description
-         ORDER BY c.name ASC
-    ')->fetchAll(PDO::FETCH_ASSOC) ?: [];
-    $models = $pdo->query('
-        SELECT m.id,
-               m.name,
-               m.manufacturer,
-               m.category_id,
-               m.notes,
-               m.image_url,
-               c.name AS category_name,
-               COUNT(a.id) AS asset_count
-          FROM asset_models m
-          LEFT JOIN asset_categories c ON c.id = m.category_id
-          LEFT JOIN assets a ON a.model_id = m.id
-         GROUP BY m.id, m.name, m.manufacturer, m.category_id, m.notes, m.image_url, c.name
-         ORDER BY m.name ASC
-    ')->fetchAll(PDO::FETCH_ASSOC) ?: [];
-    $assets = $pdo->query('
-        SELECT a.id, a.asset_tag, a.name, a.model_id, a.status, a.created_at, m.name AS model_name
-          FROM assets a
-          JOIN asset_models m ON m.id = a.model_id
-         ORDER BY a.asset_tag ASC
-    ')->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $categoriesAll = $pdo->query('SELECT id, name FROM asset_categories ORDER BY name ASC')
+        ->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $modelsAll = $pdo->query('SELECT id, name FROM asset_models ORDER BY name ASC')
+        ->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    if ($section === 'categories') {
+        $where = [];
+        $params = [];
+        if ($categoriesSearch !== '') {
+            $where[] = '(c.name LIKE :q OR c.description LIKE :q)';
+            $params[':q'] = '%' . $categoriesSearch . '%';
+        }
+        if ($categoriesDescriptionFilter !== '') {
+            if ($categoriesDescriptionFilter === '1') {
+                $where[] = "TRIM(COALESCE(c.description, '')) <> ''";
+            } elseif ($categoriesDescriptionFilter === '0') {
+                $where[] = "TRIM(COALESCE(c.description, '')) = ''";
+            }
+        }
+        $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+        $countStmt = $pdo->prepare("SELECT COUNT(*) FROM asset_categories c {$whereSql}");
+        $countStmt->execute($params);
+        $total = (int)$countStmt->fetchColumn();
+        $totalPages = max(1, (int)ceil($total / $pageSize));
+        $page = min($page, $totalPages);
+        $offset = ($page - 1) * $pageSize;
+        $sortMap = [
+            'name' => 'c.name',
+            'description' => 'c.description',
+        ];
+        [$sortKey, $sortDir] = array_pad(explode(':', $categoriesSort), 2, 'asc');
+        $sortKey = $sortMap[$sortKey] ?? 'c.name';
+        $sortDir = strtolower($sortDir) === 'desc' ? 'DESC' : 'ASC';
+        $sql = "
+            SELECT c.id,
+                   c.name,
+                   c.description,
+                   COUNT(m.id) AS model_count
+              FROM asset_categories c
+              LEFT JOIN asset_models m ON m.category_id = c.id
+             {$whereSql}
+             GROUP BY c.id, c.name, c.description
+             ORDER BY {$sortKey} {$sortDir}
+             LIMIT :limit OFFSET :offset
+        ";
+        $stmt = $pdo->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        $stmt->bindValue(':limit', $pageSize, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $categories = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $categoriesPagination = [
+            'page' => $page,
+            'pages' => $totalPages,
+            'total' => $total,
+            'start' => $total > 0 ? $offset + 1 : 0,
+            'end' => $total > 0 ? min($offset + count($categories), $total) : 0,
+        ];
+    } elseif ($section === 'models') {
+        $where = [];
+        $params = [];
+        if ($modelsSearch !== '') {
+            $where[] = '(m.name LIKE :q OR m.manufacturer LIKE :q OR m.notes LIKE :q OR c.name LIKE :q)';
+            $params[':q'] = '%' . $modelsSearch . '%';
+        }
+        if ($modelsCategoryFilter !== '') {
+            $where[] = 'c.name = :category_name';
+            $params[':category_name'] = $modelsCategoryFilter;
+        }
+        $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+        $countStmt = $pdo->prepare("
+            SELECT COUNT(*)
+              FROM asset_models m
+              LEFT JOIN asset_categories c ON c.id = m.category_id
+             {$whereSql}
+        ");
+        $countStmt->execute($params);
+        $total = (int)$countStmt->fetchColumn();
+        $totalPages = max(1, (int)ceil($total / $pageSize));
+        $page = min($page, $totalPages);
+        $offset = ($page - 1) * $pageSize;
+        $sortMap = [
+            'name' => 'm.name',
+            'manufacturer' => 'm.manufacturer',
+            'category' => 'c.name',
+            'assets' => 'asset_count',
+        ];
+        [$sortKey, $sortDir] = array_pad(explode(':', $modelsSort), 2, 'asc');
+        $sortKey = $sortMap[$sortKey] ?? 'm.name';
+        $sortDir = strtolower($sortDir) === 'desc' ? 'DESC' : 'ASC';
+        $sql = "
+            SELECT m.id,
+                   m.name,
+                   m.manufacturer,
+                   m.category_id,
+                   m.notes,
+                   m.image_url,
+                   c.name AS category_name,
+                   COUNT(a.id) AS asset_count
+              FROM asset_models m
+              LEFT JOIN asset_categories c ON c.id = m.category_id
+              LEFT JOIN assets a ON a.model_id = m.id
+             {$whereSql}
+             GROUP BY m.id, m.name, m.manufacturer, m.category_id, m.notes, m.image_url, c.name
+             ORDER BY {$sortKey} {$sortDir}
+             LIMIT :limit OFFSET :offset
+        ";
+        $stmt = $pdo->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        $stmt->bindValue(':limit', $pageSize, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $models = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $modelsPagination = [
+            'page' => $page,
+            'pages' => $totalPages,
+            'total' => $total,
+            'start' => $total > 0 ? $offset + 1 : 0,
+            'end' => $total > 0 ? min($offset + count($models), $total) : 0,
+        ];
+    } else {
+        $where = [];
+        $params = [];
+        if ($assetsSearch !== '') {
+            $where[] = '(a.asset_tag LIKE :q OR a.name LIKE :q OR m.name LIKE :q)';
+            $params[':q'] = '%' . $assetsSearch . '%';
+        }
+        if ($assetsStatusFilter !== '') {
+            $where[] = 'a.status = :status';
+            $params[':status'] = $assetsStatusFilter;
+        }
+        if ($assetsModelFilter !== '') {
+            $where[] = 'm.name = :model_name';
+            $params[':model_name'] = $assetsModelFilter;
+        }
+        $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+        $countStmt = $pdo->prepare("
+            SELECT COUNT(*)
+              FROM assets a
+              JOIN asset_models m ON m.id = a.model_id
+             {$whereSql}
+        ");
+        $countStmt->execute($params);
+        $total = (int)$countStmt->fetchColumn();
+        $totalPages = max(1, (int)ceil($total / $pageSize));
+        $page = min($page, $totalPages);
+        $offset = ($page - 1) * $pageSize;
+        $sortMap = [
+            'tag' => 'a.asset_tag',
+            'name' => 'a.name',
+            'model' => 'm.name',
+            'status' => 'a.status',
+        ];
+        [$sortKey, $sortDir] = array_pad(explode(':', $assetsSort), 2, 'asc');
+        $sortKey = $sortMap[$sortKey] ?? 'a.asset_tag';
+        $sortDir = strtolower($sortDir) === 'desc' ? 'DESC' : 'ASC';
+        $sql = "
+            SELECT a.id, a.asset_tag, a.name, a.model_id, a.status, a.created_at, m.name AS model_name
+              FROM assets a
+              JOIN asset_models m ON m.id = a.model_id
+             {$whereSql}
+             ORDER BY {$sortKey} {$sortDir}
+             LIMIT :limit OFFSET :offset
+        ";
+        $stmt = $pdo->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        $stmt->bindValue(':limit', $pageSize, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $assets = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $assetsPagination = [
+            'page' => $page,
+            'pages' => $totalPages,
+            'total' => $total,
+            'start' => $total > 0 ? $offset + 1 : 0,
+            'end' => $total > 0 ? min($offset + count($assets), $total) : 0,
+        ];
+    }
 
     if (!empty($assets)) {
         $assetIds = array_values(array_filter(array_map('intval', array_column($assets, 'id'))));
@@ -808,40 +1019,49 @@ if ($modelEditId > 0) {
                             <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createAssetModal">Create Asset</button>
                         </div>
                     </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-md-4">
-                            <input type="text" class="form-control" id="assets-filter" placeholder="Filter assets...">
+                    <form method="get" id="assets-filter-form">
+                        <input type="hidden" name="section" value="inventory">
+                        <input type="hidden" name="page" value="1">
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-4">
+                                <input type="text" class="form-control" id="assets-filter" name="q" value="<?= h($assetsSearch) ?>" placeholder="Search assets..." data-auto-submit>
+                            </div>
+                            <div class="col-md-3">
+                                <select class="form-select" id="assets-sort" name="sort">
+                                    <option value="tag:asc" <?= $assetsSort === 'tag:asc' ? 'selected' : '' ?>>Sort by tag (A-Z)</option>
+                                    <option value="tag:desc" <?= $assetsSort === 'tag:desc' ? 'selected' : '' ?>>Sort by tag (Z-A)</option>
+                                    <option value="name:asc" <?= $assetsSort === 'name:asc' ? 'selected' : '' ?>>Sort by name (A-Z)</option>
+                                    <option value="name:desc" <?= $assetsSort === 'name:desc' ? 'selected' : '' ?>>Sort by name (Z-A)</option>
+                                    <option value="model:asc" <?= $assetsSort === 'model:asc' ? 'selected' : '' ?>>Sort by model (A-Z)</option>
+                                    <option value="model:desc" <?= $assetsSort === 'model:desc' ? 'selected' : '' ?>>Sort by model (Z-A)</option>
+                                    <option value="status:asc" <?= $assetsSort === 'status:asc' ? 'selected' : '' ?>>Sort by status (A-Z)</option>
+                                    <option value="status:desc" <?= $assetsSort === 'status:desc' ? 'selected' : '' ?>>Sort by status (Z-A)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <select class="form-select" id="assets-status-filter" name="status">
+                                    <option value="">All statuses</option>
+                                    <?php foreach ($statusOptions as $opt): ?>
+                                        <option value="<?= h($opt) ?>" <?= $assetsStatusFilter === $opt ? 'selected' : '' ?>><?= h(ucwords(str_replace('_', ' ', $opt))) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <select class="form-select" id="assets-model-filter" name="model">
+                                    <option value="">All models</option>
+                                    <?php foreach ($modelsAll as $model): ?>
+                                        <option value="<?= h($model['name'] ?? '') ?>" <?= ($model['name'] ?? '') === $assetsModelFilter ? 'selected' : '' ?>><?= h($model['name'] ?? '') ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
                         </div>
-                        <div class="col-md-3">
-                            <select class="form-select" id="assets-sort">
-                                <option value="tag:asc">Sort by tag (A-Z)</option>
-                                <option value="tag:desc">Sort by tag (Z-A)</option>
-                                <option value="name:asc">Sort by name (A-Z)</option>
-                                <option value="name:desc">Sort by name (Z-A)</option>
-                                <option value="model:asc">Sort by model (A-Z)</option>
-                                <option value="model:desc">Sort by model (Z-A)</option>
-                                <option value="status:asc">Sort by status (A-Z)</option>
-                                <option value="status:desc">Sort by status (Z-A)</option>
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <select class="form-select" id="assets-status-filter">
-                                <option value="">All statuses</option>
-                                <?php foreach ($statusOptions as $opt): ?>
-                                    <option value="<?= h($opt) ?>"><?= h(ucwords(str_replace('_', ' ', $opt))) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <select class="form-select" id="assets-model-filter">
-                                <option value="">All models</option>
-                                <?php foreach ($models as $model): ?>
-                                    <option value="<?= h($model['name'] ?? '') ?>"><?= h($model['name'] ?? '') ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                    </div>
-                    <p class="text-muted small mb-3"><?= count($assets) ?> total.</p>
+                    </form>
+                    <p class="text-muted small mb-3">
+                        <?= (int)$assetsPagination['total'] ?> total.
+                        <?php if ($assetsPagination['total'] > 0): ?>
+                            Showing <?= (int)$assetsPagination['start'] ?>-<?= (int)$assetsPagination['end'] ?>.
+                        <?php endif; ?>
+                    </p>
                     <?php if (empty($assets)): ?>
                         <div class="text-muted small">No assets found yet.</div>
                     <?php else: ?>
@@ -889,6 +1109,9 @@ if ($modelEditId > 0) {
                                 </tbody>
                             </table>
                         </div>
+                        <div class="d-flex justify-content-end mt-2">
+                            <?= $renderPagination($assetsPagination, $buildQuery) ?>
+                        </div>
                     <?php endif; ?>
                 </div>
             </div>
@@ -904,30 +1127,41 @@ if ($modelEditId > 0) {
                             <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createModelModal">Create Model</button>
                         </div>
                     </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-md-4">
-                            <input type="text" class="form-control" id="models-filter" placeholder="Filter models...">
+                    <form method="get" id="models-filter-form">
+                        <input type="hidden" name="section" value="models">
+                        <input type="hidden" name="page" value="1">
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-4">
+                                <input type="text" class="form-control" id="models-filter" name="q" value="<?= h($modelsSearch) ?>" placeholder="Search models..." data-auto-submit>
+                            </div>
+                            <div class="col-md-3">
+                                <select class="form-select" id="models-sort" name="sort">
+                                    <option value="name:asc" <?= $modelsSort === 'name:asc' ? 'selected' : '' ?>>Sort by name (A-Z)</option>
+                                    <option value="name:desc" <?= $modelsSort === 'name:desc' ? 'selected' : '' ?>>Sort by name (Z-A)</option>
+                                    <option value="manufacturer:asc" <?= $modelsSort === 'manufacturer:asc' ? 'selected' : '' ?>>Sort by manufacturer (A-Z)</option>
+                                    <option value="manufacturer:desc" <?= $modelsSort === 'manufacturer:desc' ? 'selected' : '' ?>>Sort by manufacturer (Z-A)</option>
+                                    <option value="category:asc" <?= $modelsSort === 'category:asc' ? 'selected' : '' ?>>Sort by category (A-Z)</option>
+                                    <option value="category:desc" <?= $modelsSort === 'category:desc' ? 'selected' : '' ?>>Sort by category (Z-A)</option>
+                                    <option value="assets:asc" <?= $modelsSort === 'assets:asc' ? 'selected' : '' ?>>Sort by assets (A-Z)</option>
+                                    <option value="assets:desc" <?= $modelsSort === 'assets:desc' ? 'selected' : '' ?>>Sort by assets (Z-A)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <select class="form-select" id="models-category-filter" name="category">
+                                    <option value="">All categories</option>
+                                    <?php foreach ($categoriesAll as $category): ?>
+                                        <option value="<?= h($category['name'] ?? '') ?>" <?= ($category['name'] ?? '') === $modelsCategoryFilter ? 'selected' : '' ?>><?= h($category['name'] ?? '') ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
                         </div>
-                        <div class="col-md-3">
-                            <select class="form-select" id="models-sort">
-                                <option value="name:asc">Sort by name (A-Z)</option>
-                                <option value="name:desc">Sort by name (Z-A)</option>
-                                <option value="manufacturer:asc">Sort by manufacturer (A-Z)</option>
-                                <option value="manufacturer:desc">Sort by manufacturer (Z-A)</option>
-                                <option value="category:asc">Sort by category (A-Z)</option>
-                                <option value="category:desc">Sort by category (Z-A)</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <select class="form-select" id="models-category-filter">
-                                <option value="">All categories</option>
-                                <?php foreach ($categories as $category): ?>
-                                    <option value="<?= h($category['name'] ?? '') ?>"><?= h($category['name'] ?? '') ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                    </div>
-                    <p class="text-muted small mb-3"><?= count($models) ?> total.</p>
+                    </form>
+                    <p class="text-muted small mb-3">
+                        <?= (int)$modelsPagination['total'] ?> total.
+                        <?php if ($modelsPagination['total'] > 0): ?>
+                            Showing <?= (int)$modelsPagination['start'] ?>-<?= (int)$modelsPagination['end'] ?>.
+                        <?php endif; ?>
+                    </p>
                     <?php if (empty($models)): ?>
                         <div class="text-muted small">No models found yet.</div>
                     <?php else: ?>
@@ -978,6 +1212,9 @@ if ($modelEditId > 0) {
                                     </tbody>
                                 </table>
                             </div>
+                        <div class="d-flex justify-content-end mt-2">
+                            <?= $renderPagination($modelsPagination, $buildQuery) ?>
+                        </div>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -992,27 +1229,36 @@ if ($modelEditId > 0) {
                             <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createCategoryModal">Create Category</button>
                         </div>
                     </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-md-4">
-                            <input type="text" class="form-control" id="categories-filter" placeholder="Filter categories...">
+                    <form method="get" id="categories-filter-form">
+                        <input type="hidden" name="section" value="categories">
+                        <input type="hidden" name="page" value="1">
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-4">
+                                <input type="text" class="form-control" id="categories-filter" name="q" value="<?= h($categoriesSearch) ?>" placeholder="Search categories..." data-auto-submit>
+                            </div>
+                            <div class="col-md-3">
+                                <select class="form-select" id="categories-sort" name="sort">
+                                    <option value="name:asc" <?= $categoriesSort === 'name:asc' ? 'selected' : '' ?>>Sort by name (A-Z)</option>
+                                    <option value="name:desc" <?= $categoriesSort === 'name:desc' ? 'selected' : '' ?>>Sort by name (Z-A)</option>
+                                    <option value="description:asc" <?= $categoriesSort === 'description:asc' ? 'selected' : '' ?>>Sort by description (A-Z)</option>
+                                    <option value="description:desc" <?= $categoriesSort === 'description:desc' ? 'selected' : '' ?>>Sort by description (Z-A)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <select class="form-select" id="categories-description-filter" name="desc">
+                                    <option value="">All descriptions</option>
+                                    <option value="1" <?= $categoriesDescriptionFilter === '1' ? 'selected' : '' ?>>Has description</option>
+                                    <option value="0" <?= $categoriesDescriptionFilter === '0' ? 'selected' : '' ?>>No description</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="col-md-3">
-                            <select class="form-select" id="categories-sort">
-                                <option value="name:asc">Sort by name (A-Z)</option>
-                                <option value="name:desc">Sort by name (Z-A)</option>
-                                <option value="description:asc">Sort by description (A-Z)</option>
-                                <option value="description:desc">Sort by description (Z-A)</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <select class="form-select" id="categories-description-filter">
-                                <option value="">All descriptions</option>
-                                <option value="1">Has description</option>
-                                <option value="0">No description</option>
-                            </select>
-                        </div>
-                    </div>
-                    <p class="text-muted small mb-3"><?= count($categories) ?> total.</p>
+                    </form>
+                    <p class="text-muted small mb-3">
+                        <?= (int)$categoriesPagination['total'] ?> total.
+                        <?php if ($categoriesPagination['total'] > 0): ?>
+                            Showing <?= (int)$categoriesPagination['start'] ?>-<?= (int)$categoriesPagination['end'] ?>.
+                        <?php endif; ?>
+                    </p>
                     <?php if (empty($categories)): ?>
                         <div class="text-muted small">No categories found yet.</div>
                     <?php else: ?>
@@ -1059,6 +1305,9 @@ if ($modelEditId > 0) {
                                     <?php endforeach; ?>
                                 </tbody>
                             </table>
+                        </div>
+                        <div class="d-flex justify-content-end mt-2">
+                            <?= $renderPagination($categoriesPagination, $buildQuery) ?>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -1196,7 +1445,7 @@ if ($modelEditId > 0) {
                             <label class="form-label">Category</label>
                             <select name="model_category_id" class="form-select">
                                 <option value="">Unassigned</option>
-                                <?php foreach ($categories as $category): ?>
+                                <?php foreach ($categoriesAll as $category): ?>
                                     <option value="<?= (int)$category['id'] ?>">
                                         <?= h($category['name'] ?? '') ?>
                                     </option>
@@ -1252,7 +1501,7 @@ if ($modelEditId > 0) {
                                 <label class="form-label">Category</label>
                                 <select name="model_category_id" class="form-select">
                                     <option value="">Unassigned</option>
-                                    <?php foreach ($categories as $category): ?>
+                                    <?php foreach ($categoriesAll as $category): ?>
                                         <option value="<?= (int)$category['id'] ?>" <?= (int)($model['category_id'] ?? 0) === (int)$category['id'] ? 'selected' : '' ?>>
                                             <?= h($category['name'] ?? '') ?>
                                         </option>
@@ -1308,7 +1557,7 @@ if ($modelEditId > 0) {
                             <div class="col-md-3">
                                 <label class="form-label">Model</label>
                                 <select name="asset_model_id" class="form-select" required>
-                                    <?php foreach ($models as $modelOption): ?>
+                                    <?php foreach ($modelsAll as $modelOption): ?>
                                         <option value="<?= (int)$modelOption['id'] ?>" <?= (int)($modelOption['id'] ?? 0) === (int)($model['id'] ?? 0) ? 'selected' : '' ?>>
                                             <?= h($modelOption['name'] ?? '') ?>
                                         </option>
@@ -1362,7 +1611,7 @@ if ($modelEditId > 0) {
                             <label class="form-label">Model</label>
                             <select name="asset_model_id" class="form-select" required>
                                 <option value="">Select model</option>
-                                <?php foreach ($models as $model): ?>
+                                <?php foreach ($modelsAll as $model): ?>
                                     <option value="<?= (int)$model['id'] ?>">
                                         <?= h($model['name'] ?? '') ?>
                                     </option>
@@ -1416,7 +1665,7 @@ if ($modelEditId > 0) {
                                 <label class="form-label">Model</label>
                                 <select name="asset_model_id" class="form-select" required>
                                     <option value="">Select model</option>
-                                    <?php foreach ($models as $model): ?>
+                                    <?php foreach ($modelsAll as $model): ?>
                                         <option value="<?= (int)$model['id'] ?>" <?= (int)($asset['model_id'] ?? 0) === (int)$model['id'] ? 'selected' : '' ?>>
                                             <?= h($model['name'] ?? '') ?>
                                         </option>
@@ -1545,131 +1794,37 @@ if ($modelEditId > 0) {
     </div>
 <?php endforeach; ?>
 <script>
-    function wireTableControls(config) {
-        var input = document.getElementById(config.filterId);
-        var table = document.getElementById(config.tableId);
-        var sortSelect = document.getElementById(config.sortId);
-        var filterSelects = (config.filterSelectIds || []).map(function (id) {
-            return document.getElementById(id);
-        }).filter(Boolean);
-        if (!input || !table) {
+    function wireFilterForm(formId) {
+        var form = document.getElementById(formId);
+        if (!form) {
             return;
         }
-        var rows = Array.from(table.querySelectorAll('tr'));
-
-        function getSortParts() {
-            var value = sortSelect && sortSelect.value ? sortSelect.value : '';
-            var parts = value.split(':');
-            return {
-                key: parts[0] || '',
-                dir: parts[1] || 'asc',
-            };
-        }
-
-        function compareRows(a, b, key, dir) {
-            var av = (a.dataset[key] || '').toLowerCase();
-            var bv = (b.dataset[key] || '').toLowerCase();
-            if (av === bv) {
-                return 0;
+        var textInput = form.querySelector('[data-auto-submit]');
+        var selects = Array.from(form.querySelectorAll('select'));
+        var timer;
+        var submit = function () {
+            var pageInput = form.querySelector('input[name="page"]');
+            if (pageInput) {
+                pageInput.value = '1';
             }
-            var result = av < bv ? -1 : 1;
-            return dir === 'desc' ? -result : result;
-        }
-
-        function matchesFilters(row) {
-            var query = input.value.trim().toLowerCase();
-            if (query && row.textContent.toLowerCase().indexOf(query) === -1) {
-                return false;
-            }
-            return filterSelects.every(function (select) {
-                var value = select.value;
-                if (value === '') {
-                    return true;
-                }
-                return config.filterPredicates[select.id](row, value);
-            });
-        }
-
-        function render() {
-            var sort = getSortParts();
-            var ordered = rows.slice();
-            if (sort.key) {
-                ordered.sort(function (a, b) {
-                    return compareRows(a, b, sort.key, sort.dir);
-                });
-            }
-            ordered.forEach(function (row) {
-                row.style.display = matchesFilters(row) ? '' : 'none';
-                table.appendChild(row);
-            });
-        }
-
-        input.addEventListener('input', render);
-        if (sortSelect) {
-            sortSelect.addEventListener('change', render);
-        }
-        filterSelects.forEach(function (select) {
-            select.addEventListener('change', render);
-        });
-        render();
-        return {
-            render: render,
-            input: input,
+            form.submit();
         };
+        if (textInput) {
+            textInput.addEventListener('input', function () {
+                if (timer) {
+                    window.clearTimeout(timer);
+                }
+                timer = window.setTimeout(submit, 300);
+            });
+        }
+        selects.forEach(function (select) {
+            select.addEventListener('change', submit);
+        });
     }
 
-    var assetsControls = wireTableControls({
-        filterId: 'assets-filter',
-        sortId: 'assets-sort',
-        tableId: 'assets-table',
-        filterSelectIds: ['assets-status-filter', 'assets-model-filter'],
-        filterPredicates: {
-            'assets-status-filter': function (row, value) {
-                return (row.dataset.status || '') === value;
-            },
-            'assets-model-filter': function (row, value) {
-                return (row.dataset.model || '') === value;
-            },
-        },
-    });
-
-    wireTableControls({
-        filterId: 'models-filter',
-        sortId: 'models-sort',
-        tableId: 'models-table',
-        filterSelectIds: ['models-category-filter'],
-        filterPredicates: {
-            'models-category-filter': function (row, value) {
-                return (row.dataset.category || '') === value;
-            },
-        },
-    });
-
-    wireTableControls({
-        filterId: 'categories-filter',
-        sortId: 'categories-sort',
-        tableId: 'categories-table',
-        filterSelectIds: ['categories-description-filter'],
-        filterPredicates: {
-            'categories-description-filter': function (row, value) {
-                var hasDescription = (row.dataset.description || '').trim() !== '' ? '1' : '0';
-                return hasDescription === value;
-            },
-        },
-    });
-
-    var params = new URLSearchParams(window.location.search);
-    var assetModelQuery = params.get('asset_model');
-    if (assetsControls && assetModelQuery) {
-        var modelSelect = document.getElementById('assets-model-filter');
-        if (modelSelect) {
-            modelSelect.value = assetModelQuery;
-        }
-        if (assetsControls.input) {
-            assetsControls.input.value = '';
-        }
-        assetsControls.render();
-    }
+    wireFilterForm('assets-filter-form');
+    wireFilterForm('models-filter-form');
+    wireFilterForm('categories-filter-form');
 
     document.querySelectorAll('.js-category-edit').forEach(function (button) {
         button.addEventListener('click', function () {
