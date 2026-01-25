@@ -1239,14 +1239,11 @@ if ($modelEditId > 0) {
                                                 <a class="btn btn-sm btn-outline-primary" href="inventory_admin.php?section=inventory&asset_model=<?= urlencode($model['name'] ?? '') ?>">View Assets</a>
                                                 <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#createAssetForModelModal-<?= (int)$model['id'] ?>">Create Asset</button>
                                                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editModelModal-<?= (int)$model['id'] ?>">Edit</button>
-                                                <form method="post" class="d-inline js-delete-confirm" data-confirm-default="Delete this model?" data-confirm-related="Delete this model and all its assets?">
+                                                <form method="post" class="d-inline js-delete-related" data-delete-type="model" data-delete-label="<?= h($model['name'] ?? '') ?>">
                                                     <input type="hidden" name="action" value="delete_model">
                                                     <input type="hidden" name="model_id" value="<?= (int)($model['id'] ?? 0) ?>">
                                                     <input type="hidden" name="section" value="models">
-                                                    <label class="form-check-label small text-muted ms-2 me-2 align-middle">
-                                                        <input type="checkbox" class="form-check-input me-1" name="delete_related" value="1">
-                                                        Delete assets too
-                                                    </label>
+                                                    <input type="hidden" name="delete_related" value="0">
                                                     <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
                                                 </form>
                                             </td>
@@ -1337,14 +1334,11 @@ if ($modelEditId > 0) {
                                                     <button type="button" class="btn btn-sm btn-outline-secondary js-category-edit">Edit</button>
                                                     <button type="submit" class="btn btn-sm btn-outline-primary js-category-save" disabled>Save</button>
                                                 </form>
-                                                <form method="post" class="d-inline js-delete-confirm" data-confirm-default="Delete this category? Models will be left unassigned." data-confirm-related="Delete this category, its models, and all assets?">
+                                                <form method="post" class="d-inline js-delete-related" data-delete-type="category" data-delete-label="<?= h($category['name'] ?? '') ?>">
                                                     <input type="hidden" name="action" value="delete_category">
                                                     <input type="hidden" name="category_id" value="<?= (int)($category['id'] ?? 0) ?>">
                                                     <input type="hidden" name="section" value="categories">
-                                                    <label class="form-check-label small text-muted ms-2 me-2 align-middle">
-                                                        <input type="checkbox" class="form-check-input me-1" name="delete_related" value="1">
-                                                        Delete models & assets
-                                                    </label>
+                                                    <input type="hidden" name="delete_related" value="0">
                                                     <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
                                                 </form>
                                             </td>
@@ -1364,6 +1358,27 @@ if ($modelEditId > 0) {
     </div>
 </div>
 <?php layout_footer(); ?>
+<div class="modal fade" id="deleteRelatedModal" tabindex="-1" aria-labelledby="deleteRelatedModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteRelatedModalLabel">Delete item</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2" id="deleteRelatedMessage"></p>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="deleteRelatedToggle">
+                    <label class="form-check-label" id="deleteRelatedToggleLabel" for="deleteRelatedToggle"></label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="deleteRelatedConfirm">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
 <div class="modal fade" id="importCategoriesModal" tabindex="-1" aria-labelledby="importCategoriesModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -1873,18 +1888,50 @@ if ($modelEditId > 0) {
     wireFilterForm('models-filter-form');
     wireFilterForm('categories-filter-form');
 
-    document.querySelectorAll('.js-delete-confirm').forEach(function (form) {
+    var deleteModalEl = document.getElementById('deleteRelatedModal');
+    var deleteModal = deleteModalEl ? new bootstrap.Modal(deleteModalEl) : null;
+    var deleteMessage = document.getElementById('deleteRelatedMessage');
+    var deleteToggle = document.getElementById('deleteRelatedToggle');
+    var deleteToggleLabel = document.getElementById('deleteRelatedToggleLabel');
+    var deleteConfirm = document.getElementById('deleteRelatedConfirm');
+    var activeDeleteForm = null;
+
+    document.querySelectorAll('.js-delete-related').forEach(function (form) {
         form.addEventListener('submit', function (event) {
-            var related = form.querySelector('input[name="delete_related"]');
-            var message = form.dataset.confirmDefault || 'Are you sure?';
-            if (related && related.checked && form.dataset.confirmRelated) {
-                message = form.dataset.confirmRelated;
+            if (!deleteModal) {
+                return;
             }
-            if (!window.confirm(message)) {
-                event.preventDefault();
+            event.preventDefault();
+            activeDeleteForm = form;
+            var type = form.dataset.deleteType || 'item';
+            var label = form.dataset.deleteLabel || '';
+            if (deleteMessage) {
+                deleteMessage.textContent = label ? ('Delete ' + type + ' "' + label + '"?') : ('Delete this ' + type + '?');
             }
+            if (deleteToggleLabel) {
+                deleteToggleLabel.textContent = type === 'category'
+                    ? 'Also delete models and assets in this category'
+                    : 'Also delete all assets for this model';
+            }
+            if (deleteToggle) {
+                deleteToggle.checked = false;
+            }
+            deleteModal.show();
         });
     });
+
+    if (deleteConfirm) {
+        deleteConfirm.addEventListener('click', function () {
+            if (!activeDeleteForm) {
+                return;
+            }
+            var relatedInput = activeDeleteForm.querySelector('input[name="delete_related"]');
+            if (relatedInput) {
+                relatedInput.value = deleteToggle && deleteToggle.checked ? '1' : '0';
+            }
+            activeDeleteForm.submit();
+        });
+    }
 
     document.querySelectorAll('.js-category-edit').forEach(function (button) {
         button.addEventListener('click', function () {
