@@ -63,6 +63,12 @@ $installLocked = is_file($installedFlag);
 $installCompleted = false;
 $redirectTo = null;
 $serverSoftware = $_SERVER['SERVER_SOFTWARE'] ?? '';
+$configDirExists = is_dir(CONFIG_PATH);
+$configDirWritable = $configDirExists ? is_writable(CONFIG_PATH) : is_writable(APP_ROOT);
+$rootWritable = is_writable(APP_ROOT);
+$uploadsDir = APP_ROOT . '/public/uploads/images';
+$uploadsDirExists = is_dir($uploadsDir);
+$uploadsDirWritable = $uploadsDirExists ? is_writable($uploadsDir) : is_writable(APP_ROOT . '/public');
 
 $requirements = [
     [
@@ -104,6 +110,25 @@ $requirements = [
         'label'   => 'PHP extension: json',
         'detail'  => extension_loaded('json') ? 'Loaded' : 'Missing',
         'passing' => extension_loaded('json'),
+    ],
+    [
+        'label'   => 'Writable config directory',
+        'detail'  => $configDirExists
+            ? (CONFIG_PATH . ' is ' . ($configDirWritable ? 'writable' : 'not writable'))
+            : ('Config directory will be created in ' . APP_ROOT . ' (' . ($configDirWritable ? 'writable' : 'not writable') . ')'),
+        'passing' => $configDirWritable,
+    ],
+    [
+        'label'   => 'Writable project root for .installed flag',
+        'detail'  => APP_ROOT . ' is ' . ($rootWritable ? 'writable' : 'not writable'),
+        'passing' => $rootWritable,
+    ],
+    [
+        'label'   => 'Writable uploads directory (public/uploads/images)',
+        'detail'  => $uploadsDirExists
+            ? ($uploadsDir . ' is ' . ($uploadsDirWritable ? 'writable' : 'not writable'))
+            : ('Uploads directory will be created in public/ (' . ($uploadsDirWritable ? 'writable' : 'not writable') . ')'),
+        'passing' => $uploadsDirWritable,
     ],
 ];
 
