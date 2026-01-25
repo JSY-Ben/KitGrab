@@ -1,22 +1,23 @@
+<img width="684" height="676" alt="kitgrab-logo" src="https://github.com/user-attachments/assets/184d83af-a15f-4e4e-a201-9a19eaa15610" />
+
+
 # KitGrab - An Asset Reservation/Checkout System
 
 [![Donate with PayPal to help me continue developing these apps!](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/donate/?business=5TRANVZF49AN6&no_recurring=0&item_name=Thank+you+for+any+donations%21+It+will+help+me+put+money+into+the+tools+I+use+to+develop+my+apps+and+services.&currency_code=GBP)
 
-Please note - this app is still in a beta stage of development as a product. It has been built for production on a single site and has been working without issue, however please consider this an in-development product for now. Please do use it, report issues and request features, but consider it unsuitable for a high risk production environment until any bugs have been ironed out.
+Please note - this app is still in a beta stage of development as a product. Please do use it, report issues and request features, but consider it unsuitable for a high risk production environment until any bugs have been ironed out.
 
-![Catalogue](https://github.com/user-attachments/assets/ead32453-1db3-4026-8a93-4f6d118ec1f1)
+There is also a version of this app specifically designed to work with Snipe-IT's Inventory Database. It is called SnipeScheduler, and is available [here](https://github.com/JSY-Ben/SnipeScheduler)
 
-![Reservations](https://github.com/user-attachments/assets/8d4880c5-6203-4d5f-84e0-5c43d9672afa)
+KitGrab is a PHP/MySQL web app for equipment booking, checkout workflows, and asset tracking. It uses its own local asset model and asset inventory database.
 
-KitGrab is a PHP/MySQL web app for equipment booking, checkout workflows, and asset tracking. It uses its own local asset model and asset inventory database and stores users locally (created automatically when they sign in).
+Users can be created locally in the app, or you can make use of LDAP, Google OAuth, or Microsoft Entra OAuth Authentication. The installer creates an initial local admin account. When users sign in via external providers, they are added to the local user database automatically.
 
-Authentication supports local accounts plus LDAP, Google OAuth, or Microsoft Entra OAuth. The installer creates an initial local admin account. When users sign in via external providers, they are added to the local user database automatically.
-
-In the app, users can request equipment, and staff can manage reservations, checkouts, and checked-out assets from a unified "Reservations" hub.
+In the app, users can request equipment, and Checkout Users can manage reservations, checkouts, and checked-out assets from a unified "Reservations" hub.
 
 ## Features
 - Catalogue and basket flow for users to request equipment.
-- Staff "Reservations" hub with tabs for Today's Reservations (checkout), Checked Out Reservations, and Reservation History.
+- Checkout Users "Reservations" hub with tabs for Today's Reservations (checkout), Checked Out Reservations, Checking in Assets and Reservation History.
 - Quick checkout/checkin flows for ad-hoc asset handling.
 - Local inventory database for models and assets.
 - LDAP/AD, Google OAuth and Microsoft Entra integration for authentication.
@@ -38,30 +39,29 @@ In the app, users can request equipment, and staff can manage reservations, chec
 5. If you prefer manual configuration, copy `config/config.example.php` to `config/config.php` and update values. Then import `public/install/schema.sql` into your database.
 
 ## Inventory setup
-- Populate `asset_categories`, `asset_models`, and `assets` tables with your equipment data.
-- Assets with status `available` or `checked_out` will appear in the catalogue if their model exists.
-- Checked-out assets are tracked in the `checked_out_asset_cache` table by the app.
+- Assets are split into Categories, Models and Assets. A model is a specific model of equipment that you may have several of in your inventory, such as a Canon EOS Camera or Manfrotto Tripod. An asset is an individual example of one of those models, with a unique Asset Tag ID that will be used when signing out to a user.  
 
 ## General usage
 - Users:
   - Browse equipment via `Catalogue`, add to basket, and submit reservations.
   - View their reservations on `My Reservations`.
-- Staff:
+- Checkout Users:
   - Use `Reservations` page for:
     - Today's Reservations (checkout against bookings).
     - Checked Out Reservations (view/overdue assets).
+    - Check in Assets (Checkin a specific user's reservations in bulk)
     - Reservation History (filter/search all reservations).
   - Quick checkout/checkin pages exist for ad-hoc asset handling.
-- Settings:
-  - Configure app, authentication, and SMTP options via `Settings` (admin only). Test buttons let you validate connections without saving.
+- Settings (admin only):
+  - Configure app, authentication, and SMTP options via `Settings`. Test buttons let you validate connections without saving.
 
-## Setting up Admins/Staff
+## Setting up Admins/Checkout Users
 
-This app supports local accounts plus LDAP, Google OAuth, or Microsoft Entra. During installation you create the first local admin. After install, define admins/staff via local users or external groups/emails in the settings page. Standard users only have access to reservations, whereas specified staff can checkout/checkin equipment.
+This app supports local accounts plus LDAP, Google OAuth, or Microsoft Entra. During installation you create the first local admin. After install, define admins/checkout users via local users or external groups/emails in the settings page. Standard users only have access to reservations, whereas specified checkout user and admins can checkout/checkin equipment.
 
 ## CRON Scripts
 
 In the scripts folder of this app, there are certain PHP scripts you should run as a cron or via PHP CLI at regular intervals.
 
 - The `cron_mark_missed.php` script will automatically mark reservations not checked out after a specified time period (set on the settings page) as missed and release them to be booked again. By default, this is set to 1 hour.
-- The `email_overdue_staff.php` and `email_overdue_users.php` scripts will automatically email users with overdue equipment and inform staff specified on the settings page of currently overdue reservations. Run these daily if you want reminders.
+- The `email_overdue_staff.php` and `email_overdue_users.php` scripts will automatically email users with overdue equipment and inform checkout users/admins specified on the settings page of currently overdue reservations. Run these daily if you want reminders.
