@@ -283,7 +283,9 @@ if (!function_exists('layout_logo_tag')) {
         $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
         $dir = trim((string)dirname($scriptName), '/');
         $depth = $dir === '' ? 0 : substr_count($dir, '/');
-        $prefix = $depth > 0 ? str_repeat('../', $depth) : '';
+        $segments = $dir === '' ? [] : explode('/', $dir);
+        $isInstallDir = !empty($segments) && end($segments) === 'install';
+        $prefix = $isInstallDir ? '../' : ($depth > 0 ? str_repeat('../', $depth) : '');
 
         if ($logoUrl === '') {
             $logoUrl = $prefix . 'kitgrab-logo.png';
