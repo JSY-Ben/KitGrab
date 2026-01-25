@@ -653,11 +653,29 @@ $assetNotesById = [];
 $editModel = null;
 
 try {
-    $categories = $pdo->query('SELECT id, name, description FROM asset_categories ORDER BY name ASC')->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $categories = $pdo->query('
+        SELECT c.id,
+               c.name,
+               c.description,
+               COUNT(m.id) AS model_count
+          FROM asset_categories c
+          LEFT JOIN asset_models m ON m.category_id = c.id
+         GROUP BY c.id, c.name, c.description
+         ORDER BY c.name ASC
+    ')->fetchAll(PDO::FETCH_ASSOC) ?: [];
     $models = $pdo->query('
-        SELECT m.id, m.name, m.manufacturer, m.category_id, m.notes, m.image_url, c.name AS category_name
+        SELECT m.id,
+               m.name,
+               m.manufacturer,
+               m.category_id,
+               m.notes,
+               m.image_url,
+               c.name AS category_name,
+               COUNT(a.id) AS asset_count
           FROM asset_models m
           LEFT JOIN asset_categories c ON c.id = m.category_id
+          LEFT JOIN assets a ON a.model_id = m.id
+         GROUP BY m.id, m.name, m.manufacturer, m.category_id, m.notes, m.image_url, c.name
          ORDER BY m.name ASC
     ')->fetchAll(PDO::FETCH_ASSOC) ?: [];
     $assets = $pdo->query('
@@ -916,14 +934,15 @@ if ($modelEditId > 0) {
                         <div class="table-responsive">
                                 <table class="table table-sm table-striped align-middle">
                                     <thead>
-                                        <tr>
-                                            <th>ID</th>
-                                            <th>Image</th>
-                                            <th>Name</th>
-                                            <th>Manufacturer</th>
-                                            <th>Category</th>
-                                            <th></th>
-                                        </tr>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Image</th>
+                                        <th>Name</th>
+                                        <th>Manufacturer</th>
+                                        <th>Category</th>
+                                        <th>Assets</th>
+                                        <th></th>
+                                    </tr>
                                     </thead>
                                     <tbody id="models-table">
                                         <?php foreach ($models as $model): ?>
@@ -939,9 +958,10 @@ if ($modelEditId > 0) {
                                                         <span class="text-muted small">No image</span>
                                                     <?php endif; ?>
                                                 </td>
-                                                <td><?= h($model['name'] ?? '') ?></td>
-                                                <td><?= h($model['manufacturer'] ?? '') ?></td>
-                                                <td><?= h($model['category_name'] ?? 'Unassigned') ?></td>
+                                            <td><?= h($model['name'] ?? '') ?></td>
+                                            <td><?= h($model['manufacturer'] ?? '') ?></td>
+                                            <td><?= h($model['category_name'] ?? 'Unassigned') ?></td>
+                                            <td><?= (int)($model['asset_count'] ?? 0) ?></td>
                                             <td class="text-end">
                                                 <a class="btn btn-sm btn-outline-primary" href="inventory_admin.php?section=inventory&asset_model=<?= urlencode($model['name'] ?? '') ?>">View Assets</a>
                                                 <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#createAssetForModelModal-<?= (int)$model['id'] ?>">Create Asset</button>
@@ -1003,6 +1023,7 @@ if ($modelEditId > 0) {
                                         <th>ID</th>
                                         <th>Name</th>
                                         <th>Description</th>
+                                        <th>Models</th>
                                         <th></th>
                                         </tr>
                                     </thead>
@@ -1018,6 +1039,7 @@ if ($modelEditId > 0) {
                                             <td>
                                                 <input type="text" name="category_description" class="form-control form-control-sm" value="<?= h($category['description'] ?? '') ?>" form="category-form-<?= (int)($category['id'] ?? 0) ?>" disabled>
                                             </td>
+                                            <td><?= (int)($category['model_count'] ?? 0) ?></td>
                                             <td class="text-end">
                                                 <form method="post" id="category-form-<?= (int)($category['id'] ?? 0) ?>" class="d-inline">
                                                     <input type="hidden" name="action" value="save_category">
