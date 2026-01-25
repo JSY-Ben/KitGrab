@@ -267,27 +267,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $auth['ldap_enabled']        = isset($_POST['auth_ldap_enabled']);
         $auth['google_oauth_enabled'] = isset($_POST['auth_google_enabled']);
         $auth['microsoft_oauth_enabled'] = isset($_POST['auth_microsoft_enabled']);
-        $adminCnsRaw     = $post('admin_group_cn', '');
-        $checkoutCnsRaw  = $post('checkout_group_cn', '');
-        $adminGroupCns    = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $adminCnsRaw))));
-        $checkoutGroupCns = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $checkoutCnsRaw))));
-        $auth['admin_group_cn'] = $adminGroupCns;
-        $auth['checkout_group_cn'] = $checkoutGroupCns;
-
-        $googleAdminRaw = $post('google_admin_emails', '');
-        $googleCheckoutRaw = $post('google_checkout_emails', '');
-        $googleAdminList = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $googleAdminRaw))));
-        $googleCheckoutList = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $googleCheckoutRaw))));
-        $auth['google_admin_emails'] = $googleAdminList;
-        $auth['google_checkout_emails'] = $googleCheckoutList;
-
-        $msAdminRaw = $post('microsoft_admin_emails', '');
-        $msCheckoutRaw = $post('microsoft_checkout_emails', '');
-        $msAdminList = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $msAdminRaw))));
-        $msCheckoutList = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $msCheckoutRaw))));
-        $auth['microsoft_admin_emails'] = $msAdminList;
-        $auth['microsoft_checkout_emails'] = $msCheckoutList;
-
         $google = $config['google_oauth'] ?? [];
         $google['client_id']     = $post('google_client_id', $google['client_id'] ?? '');
         $googleSecretInput       = $_POST['google_client_secret'] ?? '';
@@ -456,42 +435,6 @@ function layout_textarea_value(string $value): string
 {
     return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
 }
-
-$adminGroupList = $cfg(['auth', 'admin_group_cn'], []);
-if (!is_array($adminGroupList)) {
-    $adminGroupList = [];
-}
-$adminGroupText = implode("\n", $adminGroupList);
-
-$checkoutGroupList = $cfg(['auth', 'checkout_group_cn'], []);
-if (!is_array($checkoutGroupList)) {
-    $checkoutGroupList = [];
-}
-$checkoutGroupText = implode("\n", $checkoutGroupList);
-
-$googleAdminList = $cfg(['auth', 'google_admin_emails'], []);
-if (!is_array($googleAdminList)) {
-    $googleAdminList = [];
-}
-$googleAdminText = implode("\n", $googleAdminList);
-
-$googleCheckoutList = $cfg(['auth', 'google_checkout_emails'], []);
-if (!is_array($googleCheckoutList)) {
-    $googleCheckoutList = [];
-}
-$googleCheckoutText = implode("\n", $googleCheckoutList);
-
-$msAdminList = $cfg(['auth', 'microsoft_admin_emails'], []);
-if (!is_array($msAdminList)) {
-    $msAdminList = [];
-}
-$msAdminText = implode("\n", $msAdminList);
-
-$msCheckoutList = $cfg(['auth', 'microsoft_checkout_emails'], []);
-if (!is_array($msCheckoutList)) {
-    $msCheckoutList = [];
-}
-$msCheckoutText = implode("\n", $msCheckoutList);
 
 $googleAllowedDomains = $cfg(['google_oauth', 'allowed_domains'], []);
 if (!is_array($googleAllowedDomains)) {
@@ -663,16 +606,6 @@ $allowedCategoryIds = array_map('intval', $allowedCategoryIds);
                                     <label class="form-check-label" for="ldap_ignore_cert">Ignore SSL certificate errors</label>
                                 </div>
                             </div>
-                            <div class="col-12">
-                                <label class="form-label">LDAP/AD Administrators Group(s)</label>
-                                <textarea name="admin_group_cn" rows="3" class="form-control" placeholder="ICT Admins&#10;Another Admin Group"><?= layout_textarea_value($adminGroupText) ?></textarea>
-                                <div class="form-text">Comma or newline separated group names with full admin access.</div>
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label">LDAP/AD Checkout User Group(s)</label>
-                                <textarea name="checkout_group_cn" rows="3" class="form-control" placeholder="Checkout Users&#10;Equipment Desk"><?= layout_textarea_value($checkoutGroupText) ?></textarea>
-                                <div class="form-text">Comma or newline separated group names for checkout users who can use staff features (excluding Admin).</div>
-                            </div>
                         </div>
                         <div class="d-flex justify-content-between align-items-center mt-3">
                             <div class="small text-muted" id="ldap-test-result"></div>
@@ -710,16 +643,6 @@ $allowedCategoryIds = array_map('intval', $allowedCategoryIds);
                                 <label class="form-label">Allowed Google domains (optional)</label>
                                 <textarea name="google_allowed_domains" rows="3" class="form-control" placeholder="example.com&#10;sub.example.com"><?= layout_textarea_value($googleAllowedDomainsText) ?></textarea>
                                 <div class="form-text">Comma or newline separated. Leave empty to allow any Google account.</div>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Google administrator emails (optional)</label>
-                                <textarea name="google_admin_emails" rows="3" class="form-control" placeholder="admin1@example.com&#10;admin2@example.com"><?= layout_textarea_value($googleAdminText) ?></textarea>
-                                <div class="form-text">Comma or newline separated addresses with full admin access.</div>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Google checkout user emails (optional)</label>
-                                <textarea name="google_checkout_emails" rows="3" class="form-control" placeholder="user1@example.com&#10;user2@example.com"><?= layout_textarea_value($googleCheckoutText) ?></textarea>
-                                <div class="form-text">Comma or newline separated addresses that can access checkout features (excluding Admin).</div>
                             </div>
                         </div>
                         <div class="d-flex justify-content-between align-items-center mt-3">
@@ -763,16 +686,6 @@ $allowedCategoryIds = array_map('intval', $allowedCategoryIds);
                                 <label class="form-label">Allowed domains (optional)</label>
                                 <textarea name="microsoft_allowed_domains" rows="3" class="form-control" placeholder="example.com&#10;sub.example.com"><?= layout_textarea_value($msAllowedDomainsText) ?></textarea>
                                 <div class="form-text">Comma or newline separated. Leave empty to allow any Microsoft account.</div>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Microsoft administrator emails (optional)</label>
-                                <textarea name="microsoft_admin_emails" rows="3" class="form-control" placeholder="admin1@example.com&#10;admin2@example.com"><?= layout_textarea_value($msAdminText) ?></textarea>
-                                <div class="form-text">Comma or newline separated addresses with full admin access.</div>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Microsoft checkout user emails (optional)</label>
-                                <textarea name="microsoft_checkout_emails" rows="3" class="form-control" placeholder="user1@example.com&#10;user2@example.com"><?= layout_textarea_value($msCheckoutText) ?></textarea>
-                                <div class="form-text">Comma or newline separated addresses that can access checkout features (excluding Admin).</div>
                             </div>
                         </div>
                         <div class="d-flex justify-content-between align-items-center mt-3">

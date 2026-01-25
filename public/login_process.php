@@ -20,28 +20,7 @@ $ldapEnabled   = array_key_exists('ldap_enabled', $authCfg) ? !empty($authCfg['l
 $googleEnabled = !empty($authCfg['google_oauth_enabled']);
 $msEnabled     = !empty($authCfg['microsoft_oauth_enabled']);
 
-// Staff group CN(s) from config (string or array)
-$normalizeList = static function ($raw): array {
-    if (!is_array($raw)) {
-        $raw = $raw !== '' ? [$raw] : [];
-    }
-    return array_values(array_filter(array_map('trim', $raw), 'strlen'));
-};
-$normalizeEmailList = static function ($raw): array {
-    if (!is_array($raw)) {
-        $raw = [];
-    }
-    return array_values(array_filter(array_map('strtolower', array_map('trim', $raw))));
-};
-
-$adminCns = $normalizeList($authCfg['admin_group_cn'] ?? []);
-$checkoutCns = $normalizeList($authCfg['checkout_group_cn'] ?? []);
-
-$googleAdminEmails = $normalizeEmailList($authCfg['google_admin_emails'] ?? []);
-$googleCheckoutEmails = $normalizeEmailList($authCfg['google_checkout_emails'] ?? []);
-
-$msAdminEmails = $normalizeEmailList($authCfg['microsoft_admin_emails'] ?? []);
-$msCheckoutEmails = $normalizeEmailList($authCfg['microsoft_checkout_emails'] ?? []);
+// Role flags are now managed in the Users admin page (users table).
 
 $provider = strtolower($_GET['provider'] ?? $_POST['provider'] ?? 'local');
 
@@ -428,9 +407,8 @@ if ($provider === 'google') {
         $redirectWithError($debugOn ? 'Login system is currently unavailable (database error): ' . $e->getMessage() : 'Login system is currently unavailable (database error).');
     }
 
-    $isAdmin = in_array($email, $googleAdminEmails, true);
-    $isCheckout = in_array($email, $googleCheckoutEmails, true);
-    $isStaff = $isAdmin || $isCheckout;
+    $isAdmin = false;
+    $isStaff = false;
 
     $localRoles = $loadLocalRoles($pdo, $userId);
     if ($localRoles['is_admin']) {
@@ -647,9 +625,8 @@ if ($provider === 'microsoft') {
         $redirectWithError($debugOn ? 'Login system is currently unavailable (database error): ' . $e->getMessage() : 'Login system is currently unavailable (database error).');
     }
 
-    $isAdmin = in_array($email, $msAdminEmails, true);
-    $isCheckout = in_array($email, $msCheckoutEmails, true);
-    $isStaff = $isAdmin || $isCheckout;
+    $isAdmin = false;
+    $isStaff = false;
 
     $localRoles = $loadLocalRoles($pdo, $userId);
     if ($localRoles['is_admin']) {
@@ -824,35 +801,10 @@ if ($fullName === '') {
 }
 
 // ------------------------------------------------------------------
-// Staff check (LDAP group via config)
+// Staff check handled via users table.
 // ------------------------------------------------------------------
 $isAdmin = false;
-$isCheckout = false;
-if (!empty($user['memberof']) && is_array($user['memberof'])) {
-    for ($i = 0; $i < ($user['memberof']['count'] ?? 0); $i++) {
-        $memberOf = $user['memberof'][$i] ?? '';
-        foreach ($adminCns as $cn) {
-            if ($cn !== '' && stripos($memberOf, 'CN=' . $cn . ',') !== false) {
-                $isAdmin = true;
-                break;
-            }
-        }
-        foreach ($checkoutCns as $cn) {
-            if ($cn !== '' && stripos($memberOf, 'CN=' . $cn . ',') !== false) {
-                $isCheckout = true;
-                break;
-            }
-        }
-        if ($isAdmin && $isCheckout) {
-            break;
-        }
-    }
-}
-if ($isAdmin || $isCheckout) {
-    $isStaff = true;
-} else {
-    $isStaff = false;
-}
+$isStaff = false;
 
 // ------------------------------------------------------------------
 // Upsert into users table: id, user_id, first_name, last_name, email, created_at

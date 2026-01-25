@@ -41,31 +41,6 @@ return [
         'ldap_enabled' => true,
         'google_oauth_enabled' => false,
         'microsoft_oauth_enabled' => false,
-        // Accepts a single CN string or an array of CNs
-        'admin_group_cn' => [
-            // 'ICT Admins',
-            // 'Another Admin Group',
-        ],
-        'checkout_group_cn' => [
-            // 'Checkout Users',
-            // 'Equipment Desk',
-        ],
-        // Optional: treat these Google accounts as administrators
-        'google_admin_emails' => [
-            // 'admin@example.com',
-        ],
-        // Optional: treat these Google accounts as checkout users
-        'google_checkout_emails' => [
-            // 'staff@example.com',
-        ],
-        // Optional: treat these Microsoft accounts as administrators
-        'microsoft_admin_emails' => [
-            // 'admin@example.com',
-        ],
-        // Optional: treat these Microsoft accounts as checkout users
-        'microsoft_checkout_emails' => [
-            // 'staff@example.com',
-        ],
     ],
 
     'google_oauth' => [

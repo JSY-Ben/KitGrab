@@ -27,50 +27,12 @@ $currentUser = $_SESSION['user'];
 if (!empty($currentUser['email'])) {
     try {
         require_once SRC_PATH . '/db.php';
-        $config = load_config();
-        $authCfg = $config['auth'] ?? [];
-
-        $normalizeEmailList = static function ($raw): array {
-            if (!is_array($raw)) {
-                $raw = [];
-            }
-            return array_values(array_filter(array_map('strtolower', array_map('trim', $raw))));
-        };
-
-        $stmt = $pdo->prepare('SELECT is_admin, is_staff, auth_source FROM users WHERE email = :email LIMIT 1');
-        $emailLower = strtolower(trim($currentUser['email']));
-        $stmt->execute([':email' => $emailLower]);
+        $stmt = $pdo->prepare('SELECT is_admin, is_staff FROM users WHERE email = :email LIMIT 1');
+        $stmt->execute([':email' => strtolower(trim($currentUser['email']))]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if ($row) {
-            $dbIsAdmin = !empty($row['is_admin']);
-            $dbIsStaff = !empty($row['is_staff']) || $dbIsAdmin;
-            $authSource = strtolower(trim((string)($row['auth_source'] ?? '')));
-
-            $configIsAdmin = false;
-            $configIsStaff = false;
-            if ($authSource === 'google') {
-                $googleAdminEmails = $normalizeEmailList($authCfg['google_admin_emails'] ?? []);
-                $googleCheckoutEmails = $normalizeEmailList($authCfg['google_checkout_emails'] ?? []);
-                $configIsAdmin = in_array($emailLower, $googleAdminEmails, true);
-                $configIsStaff = in_array($emailLower, $googleCheckoutEmails, true);
-            } elseif ($authSource === 'microsoft') {
-                $msAdminEmails = $normalizeEmailList($authCfg['microsoft_admin_emails'] ?? []);
-                $msCheckoutEmails = $normalizeEmailList($authCfg['microsoft_checkout_emails'] ?? []);
-                $configIsAdmin = in_array($emailLower, $msAdminEmails, true);
-                $configIsStaff = in_array($emailLower, $msCheckoutEmails, true);
-            }
-
-            if ($authSource === 'google' || $authSource === 'microsoft') {
-                $currentUser['is_admin'] = $dbIsAdmin || $configIsAdmin;
-                $currentUser['is_staff'] = $dbIsStaff || $configIsStaff || $currentUser['is_admin'];
-            } elseif ($authSource === 'ldap') {
-                // LDAP roles are determined at login time; preserve session flags and only elevate via DB.
-                $currentUser['is_admin'] = $dbIsAdmin || !empty($currentUser['is_admin']);
-                $currentUser['is_staff'] = $dbIsStaff || !empty($currentUser['is_staff']) || $currentUser['is_admin'];
-            } else {
-                $currentUser['is_admin'] = $dbIsAdmin || !empty($currentUser['is_admin']);
-                $currentUser['is_staff'] = $dbIsStaff || !empty($currentUser['is_staff']) || $currentUser['is_admin'];
-            }
+            $currentUser['is_admin'] = !empty($row['is_admin']);
+            $currentUser['is_staff'] = !empty($row['is_staff']) || $currentUser['is_admin'];
             $_SESSION['user']['is_admin'] = $currentUser['is_admin'];
             $_SESSION['user']['is_staff'] = $currentUser['is_staff'];
         }

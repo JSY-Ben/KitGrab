@@ -360,12 +360,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installLocked) {
         $newConfig['auth']['ldap_enabled']             = false;
         $newConfig['auth']['google_oauth_enabled']     = false;
         $newConfig['auth']['microsoft_oauth_enabled']  = false;
-        $newConfig['auth']['admin_group_cn']           = [];
-        $newConfig['auth']['checkout_group_cn']        = [];
-        $newConfig['auth']['google_admin_emails']      = [];
-        $newConfig['auth']['google_checkout_emails']   = [];
-        $newConfig['auth']['microsoft_admin_emails']   = [];
-        $newConfig['auth']['microsoft_checkout_emails'] = [];
         $newConfig['google_oauth'] = [
             'client_id'       => '',
             'client_secret'   => '',
