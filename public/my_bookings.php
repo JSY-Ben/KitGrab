@@ -29,6 +29,18 @@ function uk_datetime(?string $isoDatetime): string
     return $dt ? $dt->format('d/m/Y') : $isoDatetime;
 }
 
+/**
+ * Convert YYYY-MM-DD HH:MM:SS → DD/MM/YYYY hh:mm AM/PM.
+ */
+function uk_datetime_12h(?string $isoDatetime): string
+{
+    if (!$isoDatetime) {
+        return '';
+    }
+    $dt = DateTime::createFromFormat('Y-m-d H:i:s', $isoDatetime);
+    return $dt ? $dt->format('d/m/Y h:i A') : $isoDatetime;
+}
+
 $active        = basename($_SERVER['PHP_SELF']);
 $isAdmin       = !empty($currentUser['is_admin']);
 $isStaff       = !empty($currentUser['is_staff']) || $isAdmin;
@@ -183,7 +195,7 @@ if (!empty($_GET['deleted'])) {
                                     <td><?= h($row['asset_name'] ?? '') ?></td>
                                     <td><?= h($row['model_name'] ?? '') ?></td>
                                     <td><?= h(uk_datetime($row['last_checkout'] ?? '')) ?></td>
-                                    <td><?= h(uk_date($row['expected_checkin'] ?? '')) ?></td>
+                                    <td><?= h(uk_datetime_12h($row['expected_checkin'] ?? '')) ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
