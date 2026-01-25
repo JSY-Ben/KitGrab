@@ -311,7 +311,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installLocked) {
         // Defaults for omitted settings
         $timezone    = 'Europe/Jersey';
         $debug       = true;
-        $logoUrl     = '';
+        $logoUrl     = 'kitgrab-logo.png';
         $primary     = '#660000';
         $missed      = 60;
         $cataloguePP = $definedValues['CATALOGUE_ITEMS_PER_PAGE'];
