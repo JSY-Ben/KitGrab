@@ -316,20 +316,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'delete_model') {
         $modelDeleteId = (int)($_POST['model_id'] ?? 0);
+        $deleteRelated = !empty($_POST['delete_related']);
         if ($modelDeleteId <= 0) {
             $errors[] = 'Model not found.';
         }
 
         if (!$errors) {
             try {
-                $stmt = $pdo->prepare('DELETE FROM asset_models WHERE id = :id');
-                $stmt->execute([':id' => $modelDeleteId]);
-                if ($stmt->rowCount() > 0) {
-                    $messages[] = 'Model deleted.';
-                } else {
-                    $errors[] = 'Model not found.';
+                if (!$deleteRelated) {
+                    $stmt = $pdo->prepare('SELECT COUNT(*) FROM assets WHERE model_id = :id');
+                    $stmt->execute([':id' => $modelDeleteId]);
+                    $assetCount = (int)$stmt->fetchColumn();
+                    if ($assetCount > 0) {
+                        $errors[] = 'Model has assets. Select "Delete assets too" to remove it.';
+                    }
+                }
+                if (!$errors) {
+                    $pdo->beginTransaction();
+                    if ($deleteRelated) {
+                        $stmt = $pdo->prepare('DELETE FROM assets WHERE model_id = :id');
+                        $stmt->execute([':id' => $modelDeleteId]);
+                    }
+                    $stmt = $pdo->prepare('DELETE FROM asset_models WHERE id = :id');
+                    $stmt->execute([':id' => $modelDeleteId]);
+                    if ($stmt->rowCount() > 0) {
+                        $pdo->commit();
+                        $messages[] = 'Model deleted.';
+                    } else {
+                        $pdo->rollBack();
+                        $errors[] = 'Model not found.';
+                    }
                 }
             } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
                 $errors[] = 'Model delete failed: ' . $e->getMessage();
             }
         }
@@ -479,20 +500,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'delete_category') {
         $categoryDeleteId = (int)($_POST['category_id'] ?? 0);
+        $deleteRelated = !empty($_POST['delete_related']);
         if ($categoryDeleteId <= 0) {
             $errors[] = 'Category not found.';
         }
 
         if (!$errors) {
             try {
+                $pdo->beginTransaction();
+                if ($deleteRelated) {
+                    $stmt = $pdo->prepare('
+                        DELETE a
+                          FROM assets a
+                          JOIN asset_models m ON m.id = a.model_id
+                         WHERE m.category_id = :id
+                    ');
+                    $stmt->execute([':id' => $categoryDeleteId]);
+                    $stmt = $pdo->prepare('DELETE FROM asset_models WHERE category_id = :id');
+                    $stmt->execute([':id' => $categoryDeleteId]);
+                }
                 $stmt = $pdo->prepare('DELETE FROM asset_categories WHERE id = :id');
                 $stmt->execute([':id' => $categoryDeleteId]);
                 if ($stmt->rowCount() > 0) {
+                    $pdo->commit();
                     $messages[] = 'Category deleted.';
                 } else {
+                    $pdo->rollBack();
                     $errors[] = 'Category not found.';
                 }
             } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
                 $errors[] = 'Category delete failed: ' . $e->getMessage();
             }
         }
@@ -1097,11 +1136,11 @@ if ($modelEditId > 0) {
                                                     View Notes History
                                                 </button>
                                                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editAssetModal-<?= (int)$asset['id'] ?>">Edit</button>
-                                                <form method="post" class="d-inline">
+                                                <form method="post" class="d-inline js-delete-confirm" data-confirm-default="Delete this asset?">
                                                     <input type="hidden" name="action" value="delete_asset">
                                                     <input type="hidden" name="asset_id" value="<?= (int)($asset['id'] ?? 0) ?>">
                                                     <input type="hidden" name="section" value="inventory">
-                                                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this asset?');">Delete</button>
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
                                                 </form>
                                             </td>
                                             </tr>
@@ -1200,11 +1239,15 @@ if ($modelEditId > 0) {
                                                 <a class="btn btn-sm btn-outline-primary" href="inventory_admin.php?section=inventory&asset_model=<?= urlencode($model['name'] ?? '') ?>">View Assets</a>
                                                 <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#createAssetForModelModal-<?= (int)$model['id'] ?>">Create Asset</button>
                                                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editModelModal-<?= (int)$model['id'] ?>">Edit</button>
-                                                <form method="post" class="d-inline">
+                                                <form method="post" class="d-inline js-delete-confirm" data-confirm-default="Delete this model?" data-confirm-related="Delete this model and all its assets?">
                                                     <input type="hidden" name="action" value="delete_model">
                                                     <input type="hidden" name="model_id" value="<?= (int)($model['id'] ?? 0) ?>">
                                                     <input type="hidden" name="section" value="models">
-                                                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this model? All assets under it will also be deleted.');">Delete</button>
+                                                    <label class="form-check-label small text-muted ms-2 me-2 align-middle">
+                                                        <input type="checkbox" class="form-check-input me-1" name="delete_related" value="1">
+                                                        Delete assets too
+                                                    </label>
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
                                                 </form>
                                             </td>
                                             </tr>
@@ -1294,11 +1337,15 @@ if ($modelEditId > 0) {
                                                     <button type="button" class="btn btn-sm btn-outline-secondary js-category-edit">Edit</button>
                                                     <button type="submit" class="btn btn-sm btn-outline-primary js-category-save" disabled>Save</button>
                                                 </form>
-                                                <form method="post" class="d-inline">
+                                                <form method="post" class="d-inline js-delete-confirm" data-confirm-default="Delete this category? Models will be left unassigned." data-confirm-related="Delete this category, its models, and all assets?">
                                                     <input type="hidden" name="action" value="delete_category">
                                                     <input type="hidden" name="category_id" value="<?= (int)($category['id'] ?? 0) ?>">
                                                     <input type="hidden" name="section" value="categories">
-                                                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this category? Models will be left unassigned.');">Delete</button>
+                                                    <label class="form-check-label small text-muted ms-2 me-2 align-middle">
+                                                        <input type="checkbox" class="form-check-input me-1" name="delete_related" value="1">
+                                                        Delete models & assets
+                                                    </label>
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
                                                 </form>
                                             </td>
                                         </tr>
@@ -1825,6 +1872,19 @@ if ($modelEditId > 0) {
     wireFilterForm('assets-filter-form');
     wireFilterForm('models-filter-form');
     wireFilterForm('categories-filter-form');
+
+    document.querySelectorAll('.js-delete-confirm').forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+            var related = form.querySelector('input[name="delete_related"]');
+            var message = form.dataset.confirmDefault || 'Are you sure?';
+            if (related && related.checked && form.dataset.confirmRelated) {
+                message = form.dataset.confirmRelated;
+            }
+            if (!window.confirm(message)) {
+                event.preventDefault();
+            }
+        });
+    });
 
     document.querySelectorAll('.js-category-edit').forEach(function (button) {
         button.addEventListener('click', function () {
