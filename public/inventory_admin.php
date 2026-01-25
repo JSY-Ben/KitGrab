@@ -1327,6 +1327,14 @@ if ($modelEditId > 0) {
                                             </td>
                                             <td><?= (int)($category['model_count'] ?? 0) ?></td>
                                             <td class="text-end">
+                                                <a class="btn btn-sm btn-outline-primary" href="inventory_admin.php?section=models&category=<?= urlencode($category['name'] ?? '') ?>">View Models</a>
+                                                <button type="button"
+                                                        class="btn btn-sm btn-outline-primary js-create-model"
+                                                        data-bs-toggle="modal"
+                                                        data-bs-target="#createModelModal"
+                                                        data-category-id="<?= (int)($category['id'] ?? 0) ?>">
+                                                    Create Model
+                                                </button>
                                                 <form method="post" id="category-form-<?= (int)($category['id'] ?? 0) ?>" class="d-inline">
                                                     <input type="hidden" name="action" value="save_category">
                                                     <input type="hidden" name="category_id" value="<?= (int)($category['id'] ?? 0) ?>">
@@ -1933,6 +1941,20 @@ if ($modelEditId > 0) {
             activeDeleteForm.submit();
         });
     }
+
+    document.querySelectorAll('.js-create-model').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var categoryId = button.dataset.categoryId || '';
+            var modal = document.getElementById('createModelModal');
+            if (!modal) {
+                return;
+            }
+            var select = modal.querySelector('select[name="model_category_id"]');
+            if (select) {
+                select.value = categoryId;
+            }
+        });
+    });
 
     document.querySelectorAll('.js-category-edit').forEach(function (button) {
         button.addEventListener('click', function () {
