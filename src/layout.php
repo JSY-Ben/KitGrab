@@ -282,7 +282,7 @@ if (!function_exists('layout_logo_tag')) {
 
         $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
         $dir = trim((string)dirname($scriptName), '/');
-        $depth = $dir === '' ? 0 : (substr_count($dir, '/') + 1);
+        $depth = $dir === '' ? 0 : substr_count($dir, '/');
         $prefix = $depth > 0 ? str_repeat('../', $depth) : '';
 
         if ($logoUrl === '') {
