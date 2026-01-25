@@ -261,6 +261,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'Model save failed: ' . $e->getMessage();
             }
         }
+    } elseif ($action === 'delete_model') {
+        $modelDeleteId = (int)($_POST['model_id'] ?? 0);
+        if ($modelDeleteId <= 0) {
+            $errors[] = 'Model not found.';
+        }
+
+        if (!$errors) {
+            try {
+                $stmt = $pdo->prepare('DELETE FROM asset_models WHERE id = :id');
+                $stmt->execute([':id' => $modelDeleteId]);
+                if ($stmt->rowCount() > 0) {
+                    $messages[] = 'Model deleted.';
+                } else {
+                    $errors[] = 'Model not found.';
+                }
+            } catch (Throwable $e) {
+                $errors[] = 'Model delete failed: ' . $e->getMessage();
+            }
+        }
     } elseif ($action === 'save_asset') {
         $assetEditId = (int)($_POST['asset_id'] ?? 0);
         $assetTag = trim($_POST['asset_tag'] ?? '');
@@ -345,6 +364,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             } catch (Throwable $e) {
                 $errors[] = 'Asset save failed: ' . $e->getMessage();
+            }
+        }
+    } elseif ($action === 'delete_asset') {
+        $assetDeleteId = (int)($_POST['asset_id'] ?? 0);
+        if ($assetDeleteId <= 0) {
+            $errors[] = 'Asset not found.';
+        }
+
+        if (!$errors) {
+            try {
+                $stmt = $pdo->prepare('DELETE FROM assets WHERE id = :id');
+                $stmt->execute([':id' => $assetDeleteId]);
+                if ($stmt->rowCount() > 0) {
+                    $messages[] = 'Asset deleted.';
+                } else {
+                    $errors[] = 'Asset not found.';
+                }
+            } catch (Throwable $e) {
+                $errors[] = 'Asset delete failed: ' . $e->getMessage();
             }
         }
     } elseif ($action === 'save_category') {
@@ -821,6 +859,12 @@ if ($modelEditId > 0) {
                                                     View Notes History
                                                 </button>
                                                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editAssetModal-<?= (int)$asset['id'] ?>">Edit</button>
+                                                <form method="post" class="d-inline">
+                                                    <input type="hidden" name="action" value="delete_asset">
+                                                    <input type="hidden" name="asset_id" value="<?= (int)($asset['id'] ?? 0) ?>">
+                                                    <input type="hidden" name="section" value="inventory">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this asset?');">Delete</button>
+                                                </form>
                                             </td>
                                             </tr>
                                         <?php endforeach; ?>
@@ -898,11 +942,17 @@ if ($modelEditId > 0) {
                                                 <td><?= h($model['name'] ?? '') ?></td>
                                                 <td><?= h($model['manufacturer'] ?? '') ?></td>
                                                 <td><?= h($model['category_name'] ?? 'Unassigned') ?></td>
-                                                <td class="text-end">
-                                                    <a class="btn btn-sm btn-outline-primary" href="inventory_admin.php?section=inventory&asset_model=<?= urlencode($model['name'] ?? '') ?>">View Assets</a>
-                                                    <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#createAssetForModelModal-<?= (int)$model['id'] ?>">Create Asset</button>
-                                                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editModelModal-<?= (int)$model['id'] ?>">Edit</button>
-                                                </td>
+                                            <td class="text-end">
+                                                <a class="btn btn-sm btn-outline-primary" href="inventory_admin.php?section=inventory&asset_model=<?= urlencode($model['name'] ?? '') ?>">View Assets</a>
+                                                <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#createAssetForModelModal-<?= (int)$model['id'] ?>">Create Asset</button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editModelModal-<?= (int)$model['id'] ?>">Edit</button>
+                                                <form method="post" class="d-inline">
+                                                    <input type="hidden" name="action" value="delete_model">
+                                                    <input type="hidden" name="model_id" value="<?= (int)($model['id'] ?? 0) ?>">
+                                                    <input type="hidden" name="section" value="models">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this model? All assets under it will also be deleted.');">Delete</button>
+                                                </form>
+                                            </td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
