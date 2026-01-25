@@ -1,5 +1,5 @@
-<img width="684" height="676" alt="kitgrab-logo" src="https://github.com/user-attachments/assets/184d83af-a15f-4e4e-a201-9a19eaa15610" />
 
+<img width="350" height="346" alt="kitgrab-logo" src="https://github.com/user-attachments/assets/b96b78a5-f765-40f9-9dd8-fb2a154cd0e5" />
 
 # KitGrab - An Asset Reservation/Checkout System
 
