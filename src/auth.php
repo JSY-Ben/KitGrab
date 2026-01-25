@@ -63,6 +63,10 @@ if (!empty($currentUser['email'])) {
             if ($authSource === 'google' || $authSource === 'microsoft') {
                 $currentUser['is_admin'] = $dbIsAdmin || $configIsAdmin;
                 $currentUser['is_staff'] = $dbIsStaff || $configIsStaff || $currentUser['is_admin'];
+            } elseif ($authSource === 'ldap') {
+                // LDAP roles are determined at login time; preserve session flags and only elevate via DB.
+                $currentUser['is_admin'] = $dbIsAdmin || !empty($currentUser['is_admin']);
+                $currentUser['is_staff'] = $dbIsStaff || !empty($currentUser['is_staff']) || $currentUser['is_admin'];
             } else {
                 $currentUser['is_admin'] = $dbIsAdmin || !empty($currentUser['is_admin']);
                 $currentUser['is_staff'] = $dbIsStaff || !empty($currentUser['is_staff']) || $currentUser['is_admin'];
