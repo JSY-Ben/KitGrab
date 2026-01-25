@@ -71,9 +71,9 @@ $requirements = [
         'passing' => version_compare(PHP_VERSION, '8.0.0', '>='),
     ],
     [
-        'label'   => 'Web server (Apache or Nginx)',
+        'label'   => 'Web server (detected)',
         'detail'  => $serverSoftware !== '' ? $serverSoftware : 'Unknown',
-        'passing' => stripos($serverSoftware, 'apache') !== false || stripos($serverSoftware, 'nginx') !== false,
+        'passing' => true,
     ],
     [
         'label'   => 'PHP extension: pdo_mysql',
@@ -81,12 +81,12 @@ $requirements = [
         'passing' => extension_loaded('pdo_mysql'),
     ],
     [
-        'label'   => 'PHP extension: curl',
+        'label'   => 'PHP extension: curl (needed for Google/Microsoft sign-in & directory lookups)',
         'detail'  => extension_loaded('curl') ? 'Loaded' : 'Missing',
         'passing' => extension_loaded('curl'),
     ],
     [
-        'label'   => 'PHP extension: ldap',
+        'label'   => 'PHP extension: ldap (only needed for LDAP sign-in)',
         'detail'  => extension_loaded('ldap') ? 'Loaded' : 'Missing',
         'passing' => extension_loaded('ldap'),
     ],
