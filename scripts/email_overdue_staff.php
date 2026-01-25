@@ -20,6 +20,7 @@ if (php_sapi_name() !== 'cli') {
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once SRC_PATH . '/inventory_client.php';
 require_once SRC_PATH . '/email.php';
+require_once SRC_PATH . '/layout.php';
 
 $config = load_config();
 $staffEmailRaw = trim((string)($config['app']['overdue_staff_email'] ?? ''));
@@ -113,7 +114,7 @@ foreach ($assets as $a) {
     }
     $expRaw = $a['_expected_checkin_norm'] ?? ($a['expected_checkin'] ?? '');
     $expTs  = $expRaw ? strtotime($expRaw) : null;
-    $exp    = $expTs ? date('d/m/Y', $expTs) : 'unknown';
+    $exp    = $expTs ? layout_format_date(date('Y-m-d', $expTs)) : 'unknown';
     $daysOverdue = $expTs ? max(1, (int)floor((time() - $expTs) / 86400)) : 1;
 
     $lineUser = $userEmail !== '' ? "{$userEmail}" . ($userName !== '' ? " ({$userName})" : '') : 'Unknown';

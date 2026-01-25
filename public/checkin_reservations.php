@@ -27,12 +27,7 @@ function format_checked_out_datetime(string $value): string
     if ($value === '') {
         return '';
     }
-    try {
-        $dt = new DateTime($value);
-        return $dt->format('d/m/Y H:i');
-    } catch (Throwable $e) {
-        return $value;
-    }
+    return layout_format_datetime($value);
 }
 
 $messages = [];

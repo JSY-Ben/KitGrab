@@ -359,6 +359,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installLocked) {
             'timezone'              => $timezone,
             'debug'                 => $debug,
             'logo_url'              => $logoUrl,
+            'date_format'           => 'd/m/Y',
+            'time_format'           => '24h',
             'primary_color'         => $primary,
             'missed_cutoff_minutes' => $missed,
         ];

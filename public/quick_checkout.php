@@ -22,11 +22,7 @@ $reservationConflicts = [];
 // Helpers
 function qc_format_uk(?string $iso): string
 {
-    if (!$iso) {
-        return '';
-    }
-    $dt = DateTime::createFromFormat('Y-m-d H:i:s', $iso);
-    return $dt ? $dt->format('d/m/Y H:i') : $iso;
+    return layout_format_datetime($iso);
 }
 
 /**
@@ -338,7 +334,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $staffName  = trim(($currentUser['first_name'] ?? '') . ' ' . ($currentUser['last_name'] ?? ''));
                     $staffDisplayName = $staffName !== '' ? $staffName : ($currentUser['email'] ?? 'Staff');
                     $assetLines = $assetsText;
-                    $dueDisplay = date('d/m/Y h:i A', $endTs);
+                    $dueDisplay = layout_format_datetime(date('Y-m-d H:i:s', $endTs));
                     $bodyLines = [
                         'Assets checked out:',
                         $assetLines,

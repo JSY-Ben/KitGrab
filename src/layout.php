@@ -28,6 +28,90 @@ if (!function_exists('layout_cached_config')) {
     }
 }
 
+if (!function_exists('layout_date_format')) {
+    function layout_date_format(?array $cfg = null): string
+    {
+        $config = layout_cached_config($cfg);
+        $format = trim((string)($config['app']['date_format'] ?? 'd/m/Y'));
+        $allowed = ['d/m/Y', 'm/d/Y', 'Y-m-d', 'd-m-Y', 'd.m.Y'];
+        return in_array($format, $allowed, true) ? $format : 'd/m/Y';
+    }
+}
+
+if (!function_exists('layout_time_format')) {
+    function layout_time_format(?array $cfg = null): string
+    {
+        $config = layout_cached_config($cfg);
+        $format = strtolower(trim((string)($config['app']['time_format'] ?? '24h')));
+        return $format === '12h' ? '12h' : '24h';
+    }
+}
+
+if (!function_exists('layout_format_date')) {
+    function layout_format_date($value, ?array $cfg = null): string
+    {
+        if (is_array($value)) {
+            $value = $value['date'] ?? ($value['datetime'] ?? '');
+        }
+        $value = trim((string)$value);
+        if ($value === '') {
+            return '';
+        }
+        $config = layout_cached_config($cfg);
+        $tzName = trim((string)($config['app']['timezone'] ?? ''));
+        $tz = null;
+        if ($tzName !== '') {
+            try {
+                $tz = new DateTimeZone($tzName);
+            } catch (Throwable $e) {
+                $tz = null;
+            }
+        }
+        try {
+            $dt = new DateTime($value, $tz ?: null);
+            if ($tz) {
+                $dt->setTimezone($tz);
+            }
+            return $dt->format(layout_date_format($config));
+        } catch (Throwable $e) {
+            return $value;
+        }
+    }
+}
+
+if (!function_exists('layout_format_datetime')) {
+    function layout_format_datetime($value, ?array $cfg = null): string
+    {
+        if (is_array($value)) {
+            $value = $value['datetime'] ?? ($value['date'] ?? '');
+        }
+        $value = trim((string)$value);
+        if ($value === '') {
+            return '';
+        }
+        $config = layout_cached_config($cfg);
+        $tzName = trim((string)($config['app']['timezone'] ?? ''));
+        $tz = null;
+        if ($tzName !== '') {
+            try {
+                $tz = new DateTimeZone($tzName);
+            } catch (Throwable $e) {
+                $tz = null;
+            }
+        }
+        try {
+            $dt = new DateTime($value, $tz ?: null);
+            if ($tz) {
+                $dt->setTimezone($tz);
+            }
+            $timeFormat = layout_time_format($config) === '12h' ? 'h:i A' : 'H:i';
+            return $dt->format(layout_date_format($config) . ' ' . $timeFormat);
+        } catch (Throwable $e) {
+            return $value;
+        }
+    }
+}
+
 /**
  * Normalize a hex color string to #rrggbb.
  */

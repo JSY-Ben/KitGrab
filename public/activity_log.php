@@ -158,15 +158,7 @@ function format_activity_metadata(?string $metadataJson, array $labelMap, ?DateT
         } else {
             $value = (string)$value;
             if ($value !== '' && in_array($key, ['start', 'end', 'expected_checkin'], true)) {
-                try {
-                    $dt = new DateTime($value);
-                    if ($tz) {
-                        $dt->setTimezone($tz);
-                    }
-                    $value = $dt->format('d/m/Y g:i A');
-                } catch (Throwable $e) {
-                    // Keep raw value on parse errors.
-                }
+                $value = layout_format_datetime($value);
             }
         }
 
@@ -461,18 +453,7 @@ try {
                                     }
 
                                     $timestamp = (string)($row['created_at'] ?? '');
-                                    $displayTime = $timestamp;
-                                    if ($timestamp !== '') {
-                                        try {
-                                            $dt = new DateTime($timestamp);
-                                            if ($tz) {
-                                                $dt->setTimezone($tz);
-                                            }
-                                            $displayTime = $dt->format('d/m/Y g:i A');
-                                        } catch (Throwable $e) {
-                                            $displayTime = $timestamp;
-                                        }
-                                    }
+                                    $displayTime = layout_format_datetime($timestamp);
 
                                     $metadataText = trim((string)($row['metadata'] ?? ''));
                                     $metadataLines = format_activity_metadata($metadataText, $metadataLabels, $tz);

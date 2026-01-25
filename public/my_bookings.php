@@ -10,11 +10,7 @@ require_once SRC_PATH . '/layout.php';
  */
 function uk_date(?string $isoDate): string
 {
-    if (!$isoDate) {
-        return '';
-    }
-    $dt = DateTime::createFromFormat('Y-m-d', $isoDate);
-    return $dt ? $dt->format('d/m/Y') : $isoDate;
+    return layout_format_date($isoDate);
 }
 
 /**
@@ -22,23 +18,7 @@ function uk_date(?string $isoDate): string
  */
 function uk_datetime(?string $isoDatetime): string
 {
-    if (!$isoDatetime) {
-        return '';
-    }
-    $dt = DateTime::createFromFormat('Y-m-d H:i:s', $isoDatetime);
-    return $dt ? $dt->format('d/m/Y') : $isoDatetime;
-}
-
-/**
- * Convert YYYY-MM-DD HH:MM:SS → DD/MM/YYYY hh:mm AM/PM.
- */
-function uk_datetime_12h(?string $isoDatetime): string
-{
-    if (!$isoDatetime) {
-        return '';
-    }
-    $dt = DateTime::createFromFormat('Y-m-d H:i:s', $isoDatetime);
-    return $dt ? $dt->format('d/m/Y h:i A') : $isoDatetime;
+    return layout_format_datetime($isoDatetime);
 }
 
 $active        = basename($_SERVER['PHP_SELF']);
@@ -195,7 +175,7 @@ if (!empty($_GET['deleted'])) {
                                     <td><?= h($row['asset_name'] ?? '') ?></td>
                                     <td><?= h($row['model_name'] ?? '') ?></td>
                                     <td><?= h(uk_datetime($row['last_checkout'] ?? '')) ?></td>
-                                    <td><?= h(uk_datetime_12h($row['expected_checkin'] ?? '')) ?></td>
+                                    <td><?= h(uk_datetime($row['expected_checkin'] ?? '')) ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>

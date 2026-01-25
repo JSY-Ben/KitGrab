@@ -1824,15 +1824,7 @@ if ($modelEditId > 0) {
                                             $noteType = $note['note_type'] ?? '';
                                             $noteLabel = $noteType === 'checkout' ? 'Checkout' : 'Check-in';
                                             $createdAt = $note['created_at'] ?? '';
-                                            $displayDate = $createdAt;
-                                            if ($createdAt !== '') {
-                                                try {
-                                                    $dt = new DateTime($createdAt);
-                                                    $displayDate = $dt->format('d/m/Y H:i');
-                                                } catch (Throwable $e) {
-                                                    $displayDate = $createdAt;
-                                                }
-                                            }
+                                            $displayDate = $createdAt !== '' ? layout_format_datetime($createdAt) : '';
                                             $actorName = trim((string)($note['actor_name'] ?? ''));
                                             $actorEmail = trim((string)($note['actor_email'] ?? ''));
                                             $actorLabel = $actorName !== '' ? $actorName : '';

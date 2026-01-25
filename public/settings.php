@@ -46,6 +46,19 @@ $definedValues = [
     'CATALOGUE_ITEMS_PER_PAGE'  => defined('CATALOGUE_ITEMS_PER_PAGE') ? CATALOGUE_ITEMS_PER_PAGE : 12,
 ];
 
+$dateFormatOptions = [
+    'd/m/Y' => '25/01/2026 (DD/MM/YYYY)',
+    'm/d/Y' => '01/25/2026 (MM/DD/YYYY)',
+    'Y-m-d' => '2026-01-25 (YYYY-MM-DD)',
+    'd-m-Y' => '25-01-2026 (DD-MM-YYYY)',
+    'd.m.Y' => '25.01.2026 (DD.MM.YYYY)',
+];
+
+$timeFormatOptions = [
+    '24h' => '24-hour (13:45)',
+    '12h' => '12-hour (1:45 PM)',
+];
+
 function layout_test_db_connection(array $db): string
 {
     $dsn = sprintf(
@@ -308,6 +321,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $app['missed_cutoff_minutes'] = max(0, (int)$post('app_missed_cutoff', $app['missed_cutoff_minutes'] ?? 60));
         $app['overdue_staff_email']   = $post('app_overdue_staff_email', $app['overdue_staff_email'] ?? '');
         $app['overdue_staff_name']    = $post('app_overdue_staff_name', $app['overdue_staff_name'] ?? '');
+        $dateFormat = $post('app_date_format', $app['date_format'] ?? 'd/m/Y');
+        $timeFormat = $post('app_time_format', $app['time_format'] ?? '24h');
+        $app['date_format'] = array_key_exists($dateFormat, $dateFormatOptions) ? $dateFormat : 'd/m/Y';
+        $app['time_format'] = array_key_exists($timeFormat, $timeFormatOptions) ? $timeFormat : '24h';
     $app['block_catalogue_overdue'] = isset($_POST['app_block_catalogue_overdue']);
     $app['catalogue_cache_ttl'] = max(0, (int)$post('app_catalogue_cache_ttl', $app['catalogue_cache_ttl'] ?? 0));
 
@@ -896,6 +913,28 @@ $allowedCategoryIds = array_map('intval', $allowedCategoryIds);
                             <div class="col-md-4">
                                 <label class="form-label">Timezone (PHP identifier)</label>
                                 <input type="text" name="app_timezone" class="form-control" value="<?= h($cfg(['app', 'timezone'], 'Europe/Jersey')) ?>">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Date format</label>
+                                <select name="app_date_format" class="form-select">
+                                    <?php $currentDateFormat = $cfg(['app', 'date_format'], 'd/m/Y'); ?>
+                                    <?php foreach ($dateFormatOptions as $value => $label): ?>
+                                        <option value="<?= h($value) ?>" <?= $currentDateFormat === $value ? 'selected' : '' ?>>
+                                            <?= h($label) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Time format</label>
+                                <select name="app_time_format" class="form-select">
+                                    <?php $currentTimeFormat = $cfg(['app', 'time_format'], '24h'); ?>
+                                    <?php foreach ($timeFormatOptions as $value => $label): ?>
+                                        <option value="<?= h($value) ?>" <?= $currentTimeFormat === $value ? 'selected' : '' ?>>
+                                            <?= h($label) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">Primary colour (hex)</label>

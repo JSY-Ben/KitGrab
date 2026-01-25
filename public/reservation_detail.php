@@ -14,11 +14,7 @@ $isStaff = !empty($currentUser['is_staff']) || $isAdmin;
  */
 function uk_date(?string $isoDate): string
 {
-    if (!$isoDate) {
-        return '';
-    }
-    $dt = DateTime::createFromFormat('Y-m-d', $isoDate);
-    return $dt ? $dt->format('d/m/Y') : $isoDate;
+    return layout_format_date($isoDate);
 }
 
 /**
@@ -26,11 +22,7 @@ function uk_date(?string $isoDate): string
  */
 function uk_datetime(?string $isoDatetime): string
 {
-    if (!$isoDatetime) {
-        return '';
-    }
-    $dt = DateTime::createFromFormat('Y-m-d H:i:s', $isoDatetime);
-    return $dt ? $dt->format('d/m/Y') : $isoDatetime;
+    return layout_format_datetime($isoDatetime);
 }
 
 if (!$isStaff) {

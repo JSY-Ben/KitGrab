@@ -85,26 +85,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 // ---------------------------------------------------------------------
 function uk_datetime_display(?string $iso): string
 {
-    if (!$iso) {
-        return '';
-    }
-    $dt = DateTime::createFromFormat('Y-m-d H:i:s', $iso);
-    if (!$dt) {
-        return $iso;
-    }
-    return $dt->format('d/m/Y H:i');
+    return layout_format_datetime($iso);
 }
 
 function uk_datetime_display_12h(?string $iso): string
 {
-    if (!$iso) {
-        return '';
-    }
-    $dt = DateTime::createFromFormat('Y-m-d H:i:s', $iso);
-    if (!$dt) {
-        return $iso;
-    }
-    return $dt->format('d/m/Y h:i A');
+    return layout_format_datetime($iso);
 }
 
 /**

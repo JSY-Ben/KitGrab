@@ -82,15 +82,7 @@ function format_display_date($val): string
     if (is_array($val)) {
         $val = $val['datetime'] ?? ($val['date'] ?? '');
     }
-    if (empty($val)) {
-        return '';
-    }
-    try {
-        $dt = new DateTime($val);
-        return $dt->format('d/m/Y');
-    } catch (Throwable $e) {
-        return $val;
-    }
+    return layout_format_date($val);
 }
 
 function format_display_datetime($val): string
@@ -98,15 +90,7 @@ function format_display_datetime($val): string
     if (is_array($val)) {
         $val = $val['datetime'] ?? ($val['date'] ?? '');
     }
-    if (empty($val)) {
-        return '';
-    }
-    try {
-        $dt = new DateTime($val);
-        return $dt->format('d/m/Y H:i');
-    } catch (Throwable $e) {
-        return $val;
-    }
+    return layout_format_datetime($val);
 }
 
 function normalize_expected_datetime(?string $raw): string
