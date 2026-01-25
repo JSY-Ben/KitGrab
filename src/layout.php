@@ -197,7 +197,11 @@ if (!function_exists('layout_logo_tag')) {
         }
 
         if ($logoUrl === '') {
-            return '';
+            $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
+            $dir = trim((string)dirname($scriptName), '/');
+            $depth = $dir === '' ? 0 : substr_count($dir, '/');
+            $prefix = $depth > 0 ? str_repeat('../', $depth) : '';
+            $logoUrl = $prefix . 'kitgrab-logo.png';
         }
 
         $urlEsc = htmlspecialchars($logoUrl, ENT_QUOTES, 'UTF-8');
