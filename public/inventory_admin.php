@@ -386,6 +386,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'Category save failed: ' . $e->getMessage();
             }
         }
+    } elseif ($action === 'delete_category') {
+        $categoryDeleteId = (int)($_POST['category_id'] ?? 0);
+        if ($categoryDeleteId <= 0) {
+            $errors[] = 'Category not found.';
+        }
+
+        if (!$errors) {
+            try {
+                $stmt = $pdo->prepare('DELETE FROM asset_categories WHERE id = :id');
+                $stmt->execute([':id' => $categoryDeleteId]);
+                if ($stmt->rowCount() > 0) {
+                    $messages[] = 'Category deleted.';
+                } else {
+                    $errors[] = 'Category not found.';
+                }
+            } catch (Throwable $e) {
+                $errors[] = 'Category delete failed: ' . $e->getMessage();
+            }
+        }
     } elseif ($action === 'import_categories') {
         $rows = $readCsvUpload('categories_csv', $errors);
         if ($rows && !$errors) {
@@ -956,6 +975,12 @@ if ($modelEditId > 0) {
                                                     <input type="hidden" name="section" value="categories">
                                                     <button type="button" class="btn btn-sm btn-outline-secondary js-category-edit">Edit</button>
                                                     <button type="submit" class="btn btn-sm btn-outline-primary js-category-save" disabled>Save</button>
+                                                </form>
+                                                <form method="post" class="d-inline">
+                                                    <input type="hidden" name="action" value="delete_category">
+                                                    <input type="hidden" name="category_id" value="<?= (int)($category['id'] ?? 0) ?>">
+                                                    <input type="hidden" name="section" value="categories">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this category? Models will be left unassigned.');">Delete</button>
                                                 </form>
                                             </td>
                                         </tr>
