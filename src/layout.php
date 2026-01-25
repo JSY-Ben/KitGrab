@@ -280,12 +280,20 @@ if (!function_exists('layout_logo_tag')) {
             $logoUrl = trim($cfg['app']['logo_url']);
         }
 
+        $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
+        $dir = trim((string)dirname($scriptName), '/');
+        $depth = $dir === '' ? 0 : substr_count($dir, '/');
+        $prefix = $depth > 0 ? str_repeat('../', $depth) : '';
+
         if ($logoUrl === '') {
-            $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
-            $dir = trim((string)dirname($scriptName), '/');
-            $depth = $dir === '' ? 0 : substr_count($dir, '/');
-            $prefix = $depth > 0 ? str_repeat('../', $depth) : '';
             $logoUrl = $prefix . 'kitgrab-logo.png';
+        } else {
+            $isAbsolute = preg_match('#^(https?:)?//#i', $logoUrl)
+                || str_starts_with($logoUrl, '/')
+                || str_starts_with($logoUrl, 'data:');
+            if (!$isAbsolute) {
+                $logoUrl = $prefix . $logoUrl;
+            }
         }
 
         $urlEsc = htmlspecialchars($logoUrl, ENT_QUOTES, 'UTF-8');

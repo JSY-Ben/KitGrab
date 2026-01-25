@@ -665,15 +665,6 @@ $adminUsernamePref = $_POST['admin_username'] ?? '';
             <div class="col-12">
                 <div class="card">
                     <div class="card-body">
-                        <h5 class="card-title mb-1">Inventory</h5>
-                        <p class="text-muted small mb-3">Asset models and assets live in this app database. Add them after install in your admin workflows.</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-body">
                         <h5 class="card-title mb-1">Admin account</h5>
                         <p class="text-muted small mb-3">Create the first local administrator account. You can add LDAP/Google/Microsoft sign-in later in Settings.</p>
                         <div class="row g-3">
