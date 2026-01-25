@@ -763,12 +763,21 @@ $allowedCategoryIds = array_map('intval', $allowedCategoryIds);
                 <div class="card">
                     <div class="card-body">
                         <h5 class="card-title mb-1">Catalogue display</h5>
-                        <p class="text-muted small mb-3">Control how many items appear per page in the catalogue.</p>
+                        <p class="text-muted small mb-3">Control page sizing and catalogue caching.</p>
                         <div class="row g-3">
                             <div class="col-md-4">
                                 <label class="form-label">Items per page</label>
                                 <input type="number" name="catalogue_items_per_page" min="1" class="form-control" value="<?= (int)$definedValues['CATALOGUE_ITEMS_PER_PAGE'] ?>">
                                 <div class="form-text">Adjust to show more or fewer items on each catalogue page.</div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Catalogue cache TTL (seconds)</label>
+                                <input type="number"
+                                       name="app_catalogue_cache_ttl"
+                                       min="0"
+                                       class="form-control"
+                                       value="<?= (int)$cfg(['app', 'catalogue_cache_ttl'], 0) ?>">
+                                <div class="form-text">Set to 0 to disable catalogue and overdue check caching.</div>
                             </div>
                         </div>
                     </div>
@@ -894,15 +903,6 @@ $allowedCategoryIds = array_map('intval', $allowedCategoryIds);
                                 <div class="form-text mt-1">
                                     When enabled, users with overdue assets cannot access the catalogue until items are returned.
                                 </div>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Catalogue cache TTL (seconds)</label>
-                                <input type="number"
-                                       name="app_catalogue_cache_ttl"
-                                       min="0"
-                                       class="form-control"
-                                       value="<?= (int)$cfg(['app', 'catalogue_cache_ttl'], 0) ?>">
-                                <div class="form-text">Set to 0 to disable cached overdue checks.</div>
                             </div>
                         </div>
                     </div>

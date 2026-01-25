@@ -101,6 +101,36 @@ function get_bookable_models(
     $page = max(1, $page);
     $perPage = max(1, $perPage);
 
+    $cacheTtl = 0;
+    try {
+        $config = load_config();
+        $cacheTtl = (int)($config['app']['catalogue_cache_ttl'] ?? 0);
+    } catch (Throwable $e) {
+        $cacheTtl = 0;
+    }
+
+    if ($cacheTtl > 0) {
+        $cacheKey = [
+            'page' => $page,
+            'search' => $search,
+            'category' => $categoryId,
+            'sort' => $sort,
+            'per_page' => $perPage,
+            'allowed_categories' => array_values($allowedCategoryIds),
+        ];
+        $cacheHash = md5(json_encode($cacheKey));
+        $cacheFile = sys_get_temp_dir() . '/kitgrab_catalogue_' . $cacheHash . '.json';
+        $cachedRaw = @file_get_contents($cacheFile);
+        if ($cachedRaw !== false) {
+            $cached = json_decode($cachedRaw, true);
+            if (is_array($cached) && isset($cached['ts'], $cached['data'])) {
+                if ((time() - (int)$cached['ts']) <= $cacheTtl) {
+                    return $cached['data'];
+                }
+            }
+        }
+    }
+
     $params = [];
     $where = [];
 
@@ -183,10 +213,18 @@ function get_bookable_models(
         $models[] = inventory_map_model_row($row);
     }
 
-    return [
+    $payload = [
         'total' => $total,
         'rows' => $models,
     ];
+    if ($cacheTtl > 0 && isset($cacheFile)) {
+        @file_put_contents($cacheFile, json_encode([
+            'ts' => time(),
+            'data' => $payload,
+        ]), LOCK_EX);
+    }
+
+    return $payload;
 }
 
 function get_model(int $modelId): array

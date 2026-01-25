@@ -18,6 +18,15 @@ if (!$isAdmin) {
 
 $messages = [];
 $errors   = [];
+$bustCatalogueCache = false;
+
+function purge_catalogue_cache(): void
+{
+    $dir = sys_get_temp_dir();
+    foreach (glob($dir . '/kitgrab_catalogue_*.json') as $file) {
+        @unlink($file);
+    }
+}
 
 $modelEditId = (int)($_GET['model_edit'] ?? 0);
 $assetEditId = 0;
@@ -295,6 +304,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':id' => $modelEditId,
                     ]);
                     $messages[] = 'Model updated.';
+                    $bustCatalogueCache = true;
                 } else {
                     $stmt = $pdo->prepare("
                         INSERT INTO asset_models (name, manufacturer, category_id, notes, image_url, created_at)
@@ -309,6 +319,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]);
                     $modelEditId = (int)$pdo->lastInsertId();
                     $messages[] = 'Model created.';
+                    $bustCatalogueCache = true;
                 }
             } catch (Throwable $e) {
                 $errors[] = 'Model save failed: ' . $e->getMessage();
@@ -342,6 +353,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($stmt->rowCount() > 0) {
                         $pdo->commit();
                         $messages[] = 'Model deleted.';
+                        $bustCatalogueCache = true;
                     } else {
                         $pdo->rollBack();
                         $errors[] = 'Model not found.';
@@ -422,6 +434,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':id' => $assetEditId,
                     ]);
                     $messages[] = 'Asset updated.';
+                    $bustCatalogueCache = true;
                 } else {
                     $stmt = $pdo->prepare("
                         INSERT INTO assets (asset_tag, name, model_id, status, created_at)
@@ -435,6 +448,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]);
                     $assetEditId = (int)$pdo->lastInsertId();
                     $messages[] = 'Asset created.';
+                    $bustCatalogueCache = true;
                 }
             } catch (Throwable $e) {
                 $errors[] = 'Asset save failed: ' . $e->getMessage();
@@ -452,6 +466,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->execute([':id' => $assetDeleteId]);
                 if ($stmt->rowCount() > 0) {
                     $messages[] = 'Asset deleted.';
+                    $bustCatalogueCache = true;
                 } else {
                     $errors[] = 'Asset not found.';
                 }
@@ -483,6 +498,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':id' => $categoryEditId,
                     ]);
                     $messages[] = 'Category updated.';
+                    $bustCatalogueCache = true;
                 } else {
                     $stmt = $pdo->prepare("
                         INSERT INTO asset_categories (name, description, created_at)
@@ -493,6 +509,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':description' => $description !== '' ? $description : null,
                     ]);
                     $messages[] = 'Category created.';
+                    $bustCatalogueCache = true;
                 }
             } catch (Throwable $e) {
                 $errors[] = 'Category save failed: ' . $e->getMessage();
@@ -524,6 +541,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($stmt->rowCount() > 0) {
                     $pdo->commit();
                     $messages[] = 'Category deleted.';
+                    $bustCatalogueCache = true;
                 } else {
                     $pdo->rollBack();
                     $errors[] = 'Category not found.';
@@ -574,6 +592,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if ($imported > 0) {
                 $messages[] = 'Categories imported: ' . $imported . '.';
+                $bustCatalogueCache = true;
             }
         }
     } elseif ($action === 'import_models') {
@@ -646,6 +665,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if ($imported > 0) {
                 $messages[] = 'Models imported: ' . $imported . '.';
+                $bustCatalogueCache = true;
             }
         }
     } elseif ($action === 'import_assets') {
@@ -733,9 +753,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if ($imported > 0) {
                 $messages[] = 'Assets imported: ' . $imported . '.';
+                $bustCatalogueCache = true;
             }
         }
     }
+}
+
+if ($bustCatalogueCache) {
+    purge_catalogue_cache();
 }
 
 $categories = [];
