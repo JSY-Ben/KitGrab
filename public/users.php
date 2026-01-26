@@ -492,7 +492,9 @@ try {
                                     $sourceLabel = $sourceRaw !== '' ? ucfirst($sourceRaw) : 'Local';
                                     $sourceValue = $sourceRaw !== '' ? strtolower($sourceRaw) : 'local';
                                     $sourceValue = $sourceValue === 'local' ? 'local' : 'external';
-                                    $createdAt = $user['created_at'] ? date('Y-m-d', strtotime($user['created_at'])) : '';
+                                    $createdAtRaw = $user['created_at'] ?? '';
+                                    $createdAt = $createdAtRaw ? layout_format_datetime($createdAtRaw) : '';
+                                    $createdAtSort = $createdAtRaw ? date('Y-m-d H:i:s', strtotime($createdAtRaw)) : '';
                                     $isRoleOnly = !empty($user['auth_source']) && $user['auth_source'] !== 'local';
                                     ?>
                                     <tr data-first="<?= h($user['first_name'] ?? '') ?>"
@@ -501,7 +503,7 @@ try {
                                         data-username="<?= h($user['username'] ?? '') ?>"
                                         data-role="<?= h($roleValue) ?>"
                                         data-source="<?= h($sourceValue) ?>"
-                                        data-created="<?= h($createdAt) ?>">
+                                        data-created="<?= h($createdAtSort) ?>">
                                         <td><?= h($user['first_name'] ?? '') ?></td>
                                         <td><?= h($user['last_name'] ?? '') ?></td>
                                         <td><?= h($user['email'] ?? '') ?></td>
