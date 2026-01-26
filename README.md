@@ -8,6 +8,19 @@
 - Please note - this app is still in a beta stage of development as a product. Please do use it, report issues and request features, but consider it unsuitable for a high risk production environment until any bugs have been ironed out.
 - There is also a version of this app specifically designed to work with [Snipe-IT's](https://snipeitapp.com) Inventory Database. It is called SnipeScheduler, and is available [here](https://github.com/JSY-Ben/SnipeScheduler)
 
+# Demo Site
+
+A Demo version of this app is now available [here](https://www.ontherock.je/kitgrab/public/index.php)
+
+Test User Accounts are as follows:
+
+Admin:
+Username: admin
+Password: admin
+
+Normal User:
+Username: user
+Password: user
 
 **KitGrab** is a PHP/MySQL web app for equipment booking, checkout workflows, and asset tracking. It uses its own local asset model and asset inventory database.
 
