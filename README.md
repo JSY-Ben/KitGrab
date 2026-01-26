@@ -14,13 +14,17 @@ A Demo version of this app is now available [here](https://www.ontherock.je/kitg
 
 Test User Accounts are as follows:
 
-Admin:
-Username: admin
-Password: admin
-
+**Admin:**
+<p>
+Username: admin , Password: admin
+<p>
 Normal User:
-Username: user
-Password: user
+<p>
+Username: user, Password: user
+
+<p>
+
+# Introduction
 
 **KitGrab** is a PHP/MySQL web app for equipment booking, checkout workflows, and asset tracking. It uses its own local asset model and asset inventory database.
 
