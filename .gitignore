@@ -1,2 +1,4 @@
 .DS_Store
 public/uploads/
+public/.DS_Store
+templates/.DS_Store

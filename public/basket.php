@@ -19,6 +19,14 @@ $defaultEnd   = (new DateTime('tomorrow 9:00'))->format('Y-m-d\TH:i');
 
 $previewStartRaw = $_GET['start_datetime'] ?? '';
 $previewEndRaw   = $_GET['end_datetime'] ?? '';
+if ($previewStartRaw === '' && $previewEndRaw === '') {
+    $sessionStart = trim((string)($_SESSION['reservation_window_start'] ?? ''));
+    $sessionEnd   = trim((string)($_SESSION['reservation_window_end'] ?? ''));
+    if ($sessionStart !== '' && $sessionEnd !== '') {
+        $previewStartRaw = $sessionStart;
+        $previewEndRaw   = $sessionEnd;
+    }
+}
 
 if (trim($previewStartRaw) === '') {
     $previewStartRaw = $defaultStart;
@@ -43,7 +51,17 @@ if ($previewStartRaw && $previewEndRaw) {
     } else {
         $previewStart = date('Y-m-d H:i:s', $startTs);
         $previewEnd   = date('Y-m-d H:i:s', $endTs);
+        $_SESSION['reservation_window_start'] = $previewStartRaw;
+        $_SESSION['reservation_window_end']   = $previewEndRaw;
     }
+}
+
+$catalogueBackUrl = 'catalogue.php';
+if ($previewStartRaw !== '' && $previewEndRaw !== '') {
+    $catalogueBackUrl .= '?' . http_build_query([
+        'start_datetime' => $previewStartRaw,
+        'end_datetime'   => $previewEndRaw,
+    ]);
 }
 
 $models   = [];
@@ -170,7 +188,7 @@ if (!empty($basket)) {
                 (<?= h($currentUser['email'] ?? '') ?>)
             </div>
             <div class="top-bar-actions">
-                <a href="catalogue.php" class="btn btn-outline-primary">
+                <a href="<?= h($catalogueBackUrl) ?>" class="btn btn-outline-primary">
                     Back to catalogue
                 </a>
                 <a href="logout.php" class="btn btn-link btn-sm">Log out</a>
@@ -209,8 +227,7 @@ if (!empty($basket)) {
                 </div>
             <?php else: ?>
                 <div class="alert alert-secondary">
-                    Choose a start and end date below and click
-                    <strong>Check availability</strong> to see how many units are free for your dates.
+                    Choose a start and end date below to automatically refresh availability.
                 </div>
             <?php endif; ?>
 
@@ -275,24 +292,21 @@ if (!empty($basket)) {
                     <div class="availability-pill">Select reservation window</div>
                     <div class="text-muted small">Start defaults to now, end to tomorrow at 09:00</div>
                 </div>
-                <form method="get" action="basket.php">
-                    <div class="row g-3 align-items-end">
-                        <div class="col-md-4">
+                <form method="get" action="basket.php" id="basket-window-form">
+                    <div class="row g-3">
+                        <div class="col-md-6">
                             <label class="form-label fw-semibold">Start date &amp; time</label>
                             <input type="datetime-local" name="start_datetime"
+                                   id="basket_start_datetime"
                                    class="form-control form-control-lg"
                                    value="<?= htmlspecialchars($previewStartRaw) ?>">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <label class="form-label fw-semibold">End date &amp; time</label>
                             <input type="datetime-local" name="end_datetime"
+                                   id="basket_end_datetime"
                                    class="form-control form-control-lg"
                                    value="<?= htmlspecialchars($previewEndRaw) ?>">
-                        </div>
-                        <div class="col-md-4 d-grid">
-                            <button class="btn btn-outline-primary mt-3 mt-md-0" type="submit">
-                                Check availability
-                            </button>
                         </div>
                     </div>
                 </form>
@@ -317,7 +331,7 @@ if (!empty($basket)) {
                 </button>
                 <?php if (!$previewStart || !$previewEnd): ?>
                     <span class="ms-2 text-danger small">
-                        Please check availability first.
+                        Please choose a valid reservation window.
                     </span>
                 <?php endif; ?>
             </form>
@@ -327,3 +341,84 @@ if (!empty($basket)) {
 <?php layout_footer(); ?>
 </body>
 </html>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const windowForm = document.getElementById('basket-window-form');
+    const startInput = document.getElementById('basket_start_datetime');
+    const endInput = document.getElementById('basket_end_datetime');
+    let windowSubmitInFlight = false;
+    let lastSubmittedWindow = (startInput && endInput)
+        ? (startInput.value.trim() + '|' + endInput.value.trim())
+        : '';
+
+    function toLocalDatetimeValue(date) {
+        const pad = function (n) { return String(n).padStart(2, '0'); };
+        return date.getFullYear()
+            + '-' + pad(date.getMonth() + 1)
+            + '-' + pad(date.getDate())
+            + 'T' + pad(date.getHours())
+            + ':' + pad(date.getMinutes());
+    }
+
+    function normalizeWindowEnd() {
+        if (!startInput || !endInput) return;
+        const startVal = startInput.value.trim();
+        const endVal = endInput.value.trim();
+        if (startVal === '' || endVal === '') return;
+        const startMs = Date.parse(startVal);
+        const endMs = Date.parse(endVal);
+        if (Number.isNaN(startMs) || Number.isNaN(endMs)) return;
+        if (endMs <= startMs) {
+            const startDate = new Date(startMs);
+            const nextDay = new Date(startDate);
+            nextDay.setDate(startDate.getDate() + 1);
+            nextDay.setHours(9, 0, 0, 0);
+            endInput.value = toLocalDatetimeValue(nextDay);
+        }
+    }
+
+    function maybeSubmitWindow() {
+        if (windowSubmitInFlight || !windowForm || !startInput || !endInput) return;
+        const startVal = startInput.value.trim();
+        const endVal = endInput.value.trim();
+        if (startVal === '' || endVal === '') return;
+        const startMs = Date.parse(startVal);
+        const endMs = Date.parse(endVal);
+        if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs <= startMs) return;
+        const windowKey = startVal + '|' + endVal;
+        if (windowKey === lastSubmittedWindow) return;
+        lastSubmittedWindow = windowKey;
+        windowSubmitInFlight = true;
+        windowForm.submit();
+    }
+
+    if (windowForm) {
+        windowForm.addEventListener('submit', function () {
+            if (startInput && endInput) {
+                lastSubmittedWindow = startInput.value.trim() + '|' + endInput.value.trim();
+            }
+            windowSubmitInFlight = true;
+        });
+    }
+
+    if (startInput && endInput) {
+        startInput.addEventListener('change', function () {
+            normalizeWindowEnd();
+            maybeSubmitWindow();
+        });
+        endInput.addEventListener('change', function () {
+            normalizeWindowEnd();
+            maybeSubmitWindow();
+        });
+        startInput.addEventListener('blur', function () {
+            normalizeWindowEnd();
+            maybeSubmitWindow();
+        });
+        endInput.addEventListener('blur', function () {
+            normalizeWindowEnd();
+            maybeSubmitWindow();
+        });
+    }
+});
+</script>

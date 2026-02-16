@@ -525,11 +525,38 @@ $searchRaw    = trim($_GET['q'] ?? '');
 $categoryRaw  = trim($_GET['category'] ?? '');
 $sortRaw      = trim($_GET['sort'] ?? '');
 $page         = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$windowStartRaw = trim($_GET['start_datetime'] ?? '');
+$windowEndRaw   = trim($_GET['end_datetime'] ?? '');
 
 // Normalise filters
 $search   = $searchRaw !== '' ? $searchRaw : null;
 $category = ctype_digit($categoryRaw) ? (int)$categoryRaw : null;
 $sort     = $sortRaw !== '' ? $sortRaw : null;
+
+if ($windowStartRaw === '' && $windowEndRaw === '') {
+    $sessionStart = trim((string)($_SESSION['reservation_window_start'] ?? ''));
+    $sessionEnd   = trim((string)($_SESSION['reservation_window_end'] ?? ''));
+    if ($sessionStart !== '' && $sessionEnd !== '') {
+        $windowStartRaw = $sessionStart;
+        $windowEndRaw   = $sessionEnd;
+    }
+}
+
+$windowStartTs = $windowStartRaw !== '' ? strtotime($windowStartRaw) : false;
+$windowEndTs   = $windowEndRaw !== '' ? strtotime($windowEndRaw) : false;
+$windowActive  = false;
+$windowError   = '';
+if ($windowStartRaw !== '' || $windowEndRaw !== '') {
+    if ($windowStartTs === false || $windowEndTs === false) {
+        $windowError = 'Please enter a valid start and end date/time.';
+    } elseif ($windowEndTs <= $windowStartTs) {
+        $windowError = 'End date/time must be after start date/time.';
+    } else {
+        $windowActive = true;
+        $_SESSION['reservation_window_start'] = $windowStartRaw;
+        $_SESSION['reservation_window_end']   = $windowEndRaw;
+    }
+}
 
 // Pagination limit (from config constants)
 $perPage = defined('CATALOGUE_ITEMS_PER_PAGE')
@@ -570,6 +597,8 @@ $modelErr    = '';
 $totalModels = 0;
 $totalPages  = 1;
 $nowIso      = date('Y-m-d H:i:s');
+$windowStartIso = $windowActive ? date('Y-m-d H:i:s', $windowStartTs) : '';
+$windowEndIso   = $windowActive ? date('Y-m-d H:i:s', $windowEndTs) : '';
 $checkedOutCounts = [];
 
 // If allowlist is set, ignore any pre-selected category that's not allowed
@@ -667,7 +696,16 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                 (<?= htmlspecialchars($currentUser['email']) ?>)
             </div>
             <div class="top-bar-actions d-flex gap-2">
-                <a href="basket.php"
+                <?php
+                    $basketUrl = 'basket.php';
+                    if ($windowActive) {
+                        $basketUrl .= '?' . http_build_query([
+                            'start_datetime' => $windowStartRaw,
+                            'end_datetime'   => $windowEndRaw,
+                        ]);
+                    }
+                ?>
+                <a href="<?= h($basketUrl) ?>"
                    class="btn btn-lg btn-primary fw-semibold shadow-sm px-4"
                    style="font-size:16px;"
                    id="view-basket-btn">
@@ -743,11 +781,14 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
             </div>
         <?php endif; ?>
 
-        <form class="filter-panel mb-4" method="get" action="catalogue.php">
+        <form class="filter-panel mb-4" method="get" action="catalogue.php" id="catalogue-filter-form">
             <div class="filter-panel__header d-flex align-items-center gap-3">
                 <span class="filter-panel__dot"></span>
                 <div class="filter-panel__title">SEARCH</div>
             </div>
+
+            <input type="hidden" name="start_datetime" value="<?= h($windowStartRaw) ?>">
+            <input type="hidden" name="end_datetime" value="<?= h($windowEndRaw) ?>">
 
             <div class="row g-3 align-items-end">
                 <div class="col-12 col-lg-5">
@@ -803,6 +844,45 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
             </div>
         </form>
 
+        <form class="filter-panel filter-panel--compact mb-4" method="get" action="catalogue.php" id="catalogue-window-form">
+            <div class="filter-panel__header d-flex align-items-center gap-3">
+                <span class="filter-panel__dot"></span>
+                <div class="filter-panel__title">RESERVATION WINDOW</div>
+            </div>
+            <input type="hidden" name="q" value="<?= h($searchRaw) ?>">
+            <input type="hidden" name="category" value="<?= h($categoryRaw) ?>">
+            <input type="hidden" name="sort" value="<?= h($sortRaw) ?>">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Start date &amp; time</label>
+                    <input type="datetime-local"
+                           name="start_datetime"
+                           id="catalogue_start_datetime"
+                           class="form-control form-control-lg"
+                           value="<?= h($windowStartRaw) ?>">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">End date &amp; time</label>
+                    <input type="datetime-local"
+                           name="end_datetime"
+                           id="catalogue_end_datetime"
+                           class="form-control form-control-lg"
+                           value="<?= h($windowEndRaw) ?>">
+                </div>
+                <div class="col-md-4 d-grid d-md-flex gap-2">
+                    <button class="btn btn-primary btn-lg w-100 flex-md-fill mt-3 mt-md-0 reservation-window-btn" type="button" id="catalogue-today-btn">
+                        Today
+                    </button>
+                    <button class="btn btn-primary btn-lg w-100 flex-md-fill mt-3 mt-md-0 reservation-window-btn" type="submit">
+                        Update availability
+                    </button>
+                </div>
+            </div>
+            <?php if ($windowError !== ''): ?>
+                <div class="text-danger small mt-2"><?= h($windowError) ?></div>
+            <?php endif; ?>
+        </form>
+
         <?php if (empty($models) && !$modelErr): ?>
             <div class="alert alert-info">
                 No models found. Try adjusting your filters.
@@ -825,22 +905,40 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                     try {
                         $assetCount = count_assets_by_model($modelId);
 
-                        // Active reservations overlapping "now"
-                        $stmt = $pdo->prepare("
-                            SELECT
-                                COALESCE(SUM(CASE WHEN r.status IN ('pending','confirmed') THEN ri.quantity END), 0) AS pending_qty,
-                                COALESCE(SUM(CASE WHEN r.status = 'completed' THEN ri.quantity END), 0) AS completed_qty
-                            FROM reservation_items ri
-                            JOIN reservations r ON r.id = ri.reservation_id
-                            WHERE ri.model_id = :mid
-                              AND r.status IN ('pending','confirmed','completed')
-                              AND r.start_datetime <= :now
-                              AND r.end_datetime   > :now
-                        ");
-                        $stmt->execute([
-                            ':mid' => $modelId,
-                            ':now' => $nowIso,
-                        ]);
+                        if ($windowActive) {
+                            $stmt = $pdo->prepare("
+                                SELECT
+                                    COALESCE(SUM(CASE WHEN r.status IN ('pending','confirmed') THEN ri.quantity END), 0) AS pending_qty,
+                                    COALESCE(SUM(CASE WHEN r.status = 'completed' THEN ri.quantity END), 0) AS completed_qty
+                                FROM reservation_items ri
+                                JOIN reservations r ON r.id = ri.reservation_id
+                                WHERE ri.model_id = :mid
+                                  AND r.status IN ('pending','confirmed','completed')
+                                  AND (r.start_datetime < :end AND r.end_datetime > :start)
+                            ");
+                            $stmt->execute([
+                                ':mid' => $modelId,
+                                ':start' => $windowStartIso,
+                                ':end' => $windowEndIso,
+                            ]);
+                        } else {
+                            // Active reservations overlapping "now"
+                            $stmt = $pdo->prepare("
+                                SELECT
+                                    COALESCE(SUM(CASE WHEN r.status IN ('pending','confirmed') THEN ri.quantity END), 0) AS pending_qty,
+                                    COALESCE(SUM(CASE WHEN r.status = 'completed' THEN ri.quantity END), 0) AS completed_qty
+                                FROM reservation_items ri
+                                JOIN reservations r ON r.id = ri.reservation_id
+                                WHERE ri.model_id = :mid
+                                  AND r.status IN ('pending','confirmed','completed')
+                                  AND r.start_datetime <= :now
+                                  AND r.end_datetime   > :now
+                            ");
+                            $stmt->execute([
+                                ':mid' => $modelId,
+                                ':now' => $nowIso,
+                            ]);
+                        }
                         $row = $stmt->fetch(PDO::FETCH_ASSOC);
                         $pendingQty   = $row ? (int)$row['pending_qty'] : 0;
 
@@ -898,7 +996,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                                     <?php if ($assetCount !== null): ?>
                                         <span><strong>Total units:</strong> <?= $assetCount ?></span><br>
                                     <?php endif; ?>
-                                    <span><strong>Available now:</strong> <?= $freeNow ?></span>
+                                    <span><strong><?= $windowActive ? 'Available for selected dates:' : 'Available now:' ?></strong> <?= $freeNow ?></span>
                                     <?php if (!empty($notes)): ?>
                                         <div class="mt-2 text-muted clamp-3">
                                             <?= label_safe($notes) ?>
@@ -910,6 +1008,10 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                                       action="basket_add.php"
                                       class="mt-auto add-to-basket-form">
                                     <input type="hidden" name="model_id" value="<?= $modelId ?>">
+                                    <?php if ($windowActive): ?>
+                                        <input type="hidden" name="start_datetime" value="<?= h($windowStartRaw) ?>">
+                                        <input type="hidden" name="end_datetime" value="<?= h($windowEndRaw) ?>">
+                                    <?php endif; ?>
 
                                     <?php if ($hasStock && $freeNow > 0): ?>
                                         <div class="row g-2 align-items-center mb-2">
@@ -933,7 +1035,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                                             <?php if (!$hasStock): ?>
                                                 No units available.
                                             <?php else: ?>
-                                                No units available right now.
+                                                <?= $windowActive ? 'No units available for selected dates.' : 'No units available right now.' ?>
                                             <?php endif; ?>
                                         </div>
                                         <button type="button"
@@ -958,6 +1060,8 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                             'q'        => $searchRaw,
                             'category' => $categoryRaw,
                             'sort'     => $sortRaw,
+                            'start_datetime' => $windowStartRaw,
+                            'end_datetime' => $windowEndRaw,
                         ];
                         ?>
                         <?php for ($p = 1; $p <= $totalPages; $p++): ?>
@@ -996,9 +1100,13 @@ document.addEventListener('DOMContentLoaded', function () {
     const bookingEmail = document.getElementById('booking_user_email');
     const bookingName  = document.getElementById('booking_user_name');
     const basketToast  = document.getElementById('basket-toast');
-    const filterForm = document.querySelector('.filter-panel');
+    const filterForm = document.getElementById('catalogue-filter-form');
     const categorySelect = filterForm ? filterForm.querySelector('select[name="category"]') : null;
     const sortSelect = filterForm ? filterForm.querySelector('select[name="sort"]') : null;
+    const windowStartInput = document.getElementById('catalogue_start_datetime');
+    const windowEndInput = document.getElementById('catalogue_end_datetime');
+    const windowForm = document.getElementById('catalogue-window-form');
+    const todayBtn = document.getElementById('catalogue-today-btn');
     let bookingTimer   = null;
     let bookingQuery   = '';
     let basketToastTimer = null;
@@ -1042,6 +1150,55 @@ document.addEventListener('DOMContentLoaded', function () {
             basketToast.classList.remove('show');
             basketToast.setAttribute('aria-hidden', 'true');
         }, 2200);
+    }
+
+    function maybeSubmitWindow() {
+        if (!windowForm || !windowStartInput || !windowEndInput) return;
+        const startVal = windowStartInput.value.trim();
+        const endVal = windowEndInput.value.trim();
+        if (startVal === '' && endVal === '') return;
+        if (startVal === '' || endVal === '') return;
+        const startMs = Date.parse(startVal);
+        const endMs = Date.parse(endVal);
+        if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs <= startMs) return;
+        windowForm.submit();
+    }
+
+    function toLocalDatetimeValue(date) {
+        const pad = function (n) { return String(n).padStart(2, '0'); };
+        return date.getFullYear()
+            + '-' + pad(date.getMonth() + 1)
+            + '-' + pad(date.getDate())
+            + 'T' + pad(date.getHours())
+            + ':' + pad(date.getMinutes());
+    }
+
+    function setTodayWindow() {
+        if (!windowStartInput || !windowEndInput) return;
+        const now = new Date();
+        const tomorrow = new Date(now);
+        tomorrow.setDate(now.getDate() + 1);
+        tomorrow.setHours(9, 0, 0, 0);
+        windowStartInput.value = toLocalDatetimeValue(now);
+        windowEndInput.value = toLocalDatetimeValue(tomorrow);
+        maybeSubmitWindow();
+    }
+
+    function normalizeWindowEnd() {
+        if (!windowStartInput || !windowEndInput) return;
+        const startVal = windowStartInput.value.trim();
+        const endVal = windowEndInput.value.trim();
+        if (startVal === '' || endVal === '') return;
+        const startMs = Date.parse(startVal);
+        const endMs = Date.parse(endVal);
+        if (Number.isNaN(startMs) || Number.isNaN(endMs)) return;
+        if (endMs <= startMs) {
+            const startDate = new Date(startMs);
+            const nextDay = new Date(startDate);
+            nextDay.setDate(startDate.getDate() + 1);
+            nextDay.setHours(9, 0, 0, 0);
+            windowEndInput.value = toLocalDatetimeValue(nextDay);
+        }
     }
 
     const overdueEnabled = document.body.dataset.catalogueOverdue === '1';
@@ -1104,9 +1261,10 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                 })
                 .catch(function () {
-                // Fallback: if AJAX fails for any reason, do normal form submit
-                form.submit();
-            });
+                    // Fallback: if AJAX fails for any reason, do normal form submit
+                    form.submit();
+                });
+        });
     });
 
     function hideBookingSuggestions() {
@@ -1181,6 +1339,18 @@ document.addEventListener('DOMContentLoaded', function () {
             filterForm.submit();
         });
     }
+
+    if (windowStartInput && windowEndInput) {
+        windowStartInput.addEventListener('change', normalizeWindowEnd);
+        windowEndInput.addEventListener('change', normalizeWindowEnd);
+        windowStartInput.addEventListener('change', maybeSubmitWindow);
+        windowEndInput.addEventListener('change', maybeSubmitWindow);
+        windowStartInput.addEventListener('blur', maybeSubmitWindow);
+        windowEndInput.addEventListener('blur', maybeSubmitWindow);
+    }
+    if (todayBtn) {
+        todayBtn.addEventListener('click', setTodayWindow);
+    }
 });
 
 function clearBookingUser() {
@@ -1209,7 +1379,6 @@ function revertToLoggedIn(e) {
         form.submit();
     }
 }
-});
 </script>
 <?php layout_footer(); ?>
 </body>

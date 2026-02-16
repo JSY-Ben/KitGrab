@@ -204,6 +204,9 @@ if (isset($_GET['remove'])) {
     if ($removeId > 0 && isset($checkoutAssets[$removeId])) {
         unset($checkoutAssets[$removeId]);
     }
+    if ($selectedReservationId) {
+        $_SESSION['selected_reservation_fresh'] = 1;
+    }
     header('Location: ' . $selfUrl);
     exit;
 }
@@ -423,6 +426,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     unset($_SESSION['reservation_selected_assets'][$selectedReservationId]);
                     unset($_SESSION['selected_reservation_id']);
                     $selectedReservationId = null;
+                }
+
+                if ($selectedReservationId) {
+                    $_SESSION['selected_reservation_fresh'] = 1;
                 }
 
                 header('Location: ' . $selfUrl);

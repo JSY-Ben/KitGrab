@@ -122,7 +122,7 @@ if (!$tabFile || !is_file($tabFile)) {
             </li>
             <li class="nav-item">
                 <a class="nav-link <?= $tab === 'history' ? 'active' : '' ?>"
-                   href="reservations.php?tab=history">Reservation History</a>
+                   href="reservations.php?tab=history">All Reservations</a>
             </li>
         </ul>
 

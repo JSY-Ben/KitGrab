@@ -667,6 +667,27 @@ form .form-select {
     color: #fff;
 }
 
+.filter-panel--compact {
+    padding: 0.9rem 1.1rem;
+}
+
+.filter-panel--compact .filter-panel__header {
+    margin-bottom: 0.45rem;
+}
+
+.filter-panel--compact .row.g-3 {
+    --bs-gutter-y: 0.65rem;
+}
+
+.filter-panel--compact .form-label {
+    margin-bottom: 0.35rem;
+}
+
+.reservation-window-btn {
+    font-size: 0.9rem;
+    white-space: nowrap;
+}
+
 .filter-panel::after {
     content: "";
     position: absolute;
