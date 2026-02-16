@@ -607,7 +607,7 @@ if (!empty($allowedCategoryMap) && $category !== null && !isset($allowedCategory
 }
 
 try {
-    $data = get_bookable_models($page, $search ?? '', $category, $sort, $perPage, $allowedCategoryIds);
+    $data = get_bookable_models($page, $search ?? '', $category, $sort, $perPage, $allowedCategoryIds, $windowActive);
 
     if (isset($data['rows']) && is_array($data['rows'])) {
         $models = $data['rows'];

@@ -94,7 +94,8 @@ function get_bookable_models(
     ?int $categoryId = null,
     ?string $sort = null,
     int $perPage = 50,
-    array $allowedCategoryIds = []
+    array $allowedCategoryIds = [],
+    bool $disableCache = false
 ): array {
     global $pdo;
 
@@ -106,6 +107,10 @@ function get_bookable_models(
         $config = load_config();
         $cacheTtl = (int)($config['app']['catalogue_cache_ttl'] ?? 0);
     } catch (Throwable $e) {
+        $cacheTtl = 0;
+    }
+
+    if ($disableCache) {
         $cacheTtl = 0;
     }
 
@@ -225,6 +230,21 @@ function get_bookable_models(
     }
 
     return $payload;
+}
+
+function clear_catalogue_model_cache_files(): void
+{
+    $pattern = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'kitgrab_catalogue_*.json';
+    $files = glob($pattern);
+    if (!is_array($files) || empty($files)) {
+        return;
+    }
+
+    foreach ($files as $file) {
+        if (is_string($file) && is_file($file)) {
+            @unlink($file);
+        }
+    }
 }
 
 function get_model(int $modelId): array

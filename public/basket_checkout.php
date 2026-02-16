@@ -153,6 +153,7 @@ $insertRes->execute([
     }
 
     $pdo->commit();
+    clear_catalogue_model_cache_files();
     $_SESSION['basket'] = []; // clear basket
 
     activity_log_event('reservation_submitted', 'Reservation submitted', [
