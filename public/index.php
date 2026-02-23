@@ -7,8 +7,8 @@ ini_set('html_errors', '1');
 error_reporting(E_ALL);
 
 set_exception_handler(static function (Throwable $e): void {
-    http_response_code(500);
     if (!headers_sent()) {
+        http_response_code(500);
         header('Content-Type: text/plain; charset=UTF-8');
     }
 
@@ -29,8 +29,8 @@ register_shutdown_function(static function (): void {
         return;
     }
 
-    http_response_code(500);
     if (!headers_sent()) {
+        http_response_code(500);
         header('Content-Type: text/plain; charset=UTF-8');
     }
 
