@@ -1,4 +1,45 @@
 <?php
+// TEMPORARY DEBUG HARNESS
+// Remove after diagnosing HTTP 500 errors.
+ini_set('display_errors', '1');
+ini_set('display_startup_errors', '1');
+ini_set('html_errors', '1');
+error_reporting(E_ALL);
+
+set_exception_handler(static function (Throwable $e): void {
+    http_response_code(500);
+    if (!headers_sent()) {
+        header('Content-Type: text/plain; charset=UTF-8');
+    }
+
+    echo "KitGrab temporary debug: uncaught exception\n";
+    echo get_class($e) . ': ' . $e->getMessage() . "\n";
+    echo 'File: ' . $e->getFile() . ':' . $e->getLine() . "\n\n";
+    echo $e->getTraceAsString() . "\n";
+});
+
+register_shutdown_function(static function (): void {
+    $error = error_get_last();
+    if (!is_array($error)) {
+        return;
+    }
+
+    $fatalTypes = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR];
+    if (!in_array((int)$error['type'], $fatalTypes, true)) {
+        return;
+    }
+
+    http_response_code(500);
+    if (!headers_sent()) {
+        header('Content-Type: text/plain; charset=UTF-8');
+    }
+
+    echo "KitGrab temporary debug: fatal error\n";
+    echo 'Type: ' . (int)$error['type'] . "\n";
+    echo 'Message: ' . (string)$error['message'] . "\n";
+    echo 'File: ' . (string)$error['file'] . ':' . (int)$error['line'] . "\n";
+});
+
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once SRC_PATH . '/auth.php';
 require_once SRC_PATH . '/db.php';
