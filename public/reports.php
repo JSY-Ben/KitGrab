@@ -416,7 +416,7 @@ try {
             'model_id' => (int)$modelId,
             'model_name' => $modelName,
             'model_image_url' => $modelImagePath !== ''
-                ? 'image_proxy.php?src=' . urlencode($modelImagePath)
+                ? $modelImagePath
                 : '',
             'category' => $modelCategory,
             'unit_minutes' => $minutes,

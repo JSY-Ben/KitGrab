@@ -1385,10 +1385,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                         $notes = $notes['text'] ?? '';
                     }
 
-                    $proxiedImage = '';
-                    if ($imagePath !== '') {
-                        $proxiedImage = 'image_proxy.php?src=' . urlencode($imagePath);
-                    }
+                    $displayImage = $imagePath !== '' ? $imagePath : '';
                     ?>
                     <div class="col-md-4">
                         <div class="card h-100 model-card model-card--details"
@@ -1397,9 +1394,9 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                              role="button"
                              tabindex="0"
                              aria-label="Open notes and bookings for <?= h($name) ?>">
-                            <?php if ($proxiedImage !== ''): ?>
+                            <?php if ($displayImage !== ''): ?>
                                 <div class="model-image-wrapper">
-                                    <img src="<?= htmlspecialchars($proxiedImage) ?>"
+                                    <img src="<?= h($displayImage) ?>"
                                          alt=""
                                          class="model-image img-fluid">
                                 </div>

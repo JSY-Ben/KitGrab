@@ -495,14 +495,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         $qty = $displayQty[$mid] ?? (int)($item['quantity'] ?? 0);
                                         $name = $item['model_name_cache'] ?? ('Model #' . $mid);
                                         $imagePath = $modelImageMap[$mid] ?? '';
-                                        $proxiedImage = $imagePath !== ''
-                                            ? 'image_proxy.php?src=' . urlencode($imagePath)
-                                            : '';
+                                        $displayImage = $imagePath !== '' ? $imagePath : '';
                                     ?>
                                     <tr>
                                         <td>
-                                            <?php if ($proxiedImage !== ''): ?>
-                                                <img src="<?= h($proxiedImage) ?>"
+                                            <?php if ($displayImage !== ''): ?>
+                                                <img src="<?= h($displayImage) ?>"
                                                      alt="<?= h($name) ?>"
                                                      class="reservation-model-image">
                                             <?php else: ?>

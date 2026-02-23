@@ -972,9 +972,7 @@ $active  = basename($_SERVER['PHP_SELF']);
                                 $qty     = (int)$item['qty'];
                                 $options = $modelAssets[$mid] ?? [];
                                 $imagePath = $item['image'] ?? '';
-                                $proxiedImage = $imagePath !== ''
-                                    ? 'image_proxy.php?src=' . urlencode($imagePath)
-                                    : '';
+                                $displayImage = $imagePath !== '' ? $imagePath : '';
                             ?>
                             <div class="mb-3">
                                 <table class="table table-sm align-middle reservation-model-table">
@@ -982,8 +980,8 @@ $active  = basename($_SERVER['PHP_SELF']);
                                         <tr>
                                             <td class="reservation-model-cell">
                                                 <div class="reservation-model-header">
-                                                    <?php if ($proxiedImage !== ''): ?>
-                                                        <img src="<?= h($proxiedImage) ?>"
+                                                    <?php if ($displayImage !== ''): ?>
+                                                        <img src="<?= h($displayImage) ?>"
                                                              alt="<?= h($item['name'] ?? ('Model #' . $mid)) ?>"
                                                              class="reservation-model-image">
                                                     <?php else: ?>
