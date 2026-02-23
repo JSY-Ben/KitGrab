@@ -1058,6 +1058,12 @@ if ($modelEditId > 0) {
             <li class="nav-item">
                 <a class="nav-link" href="settings.php">Settings</a>
             </li>
+            <li class="nav-item">
+                <a class="nav-link" href="announcements.php">Announcements</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="reports.php">Reports</a>
+            </li>
         </ul>
 
         <ul class="nav nav-tabs reservations-subtabs mb-3">

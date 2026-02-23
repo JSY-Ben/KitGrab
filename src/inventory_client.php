@@ -8,6 +8,10 @@ require_once __DIR__ . '/db.php';
 
 function inventory_map_model_row(array $row): array
 {
+    $assetsCount = isset($row['assets_count']) && is_numeric($row['assets_count'])
+        ? (int)$row['assets_count']
+        : null;
+
     return [
         'id' => (int)($row['id'] ?? 0),
         'name' => $row['name'] ?? '',
@@ -20,6 +24,8 @@ function inventory_map_model_row(array $row): array
         ],
         'image' => $row['image_url'] ?? '',
         'notes' => $row['notes'] ?? '',
+        'assets_count' => $assetsCount,
+        'requestable' => $assetsCount === null ? true : ($assetsCount > 0),
     ];
 }
 
@@ -27,6 +33,8 @@ function inventory_map_asset_row(array $row): array
 {
     $modelImage = $row['model_image_url'] ?? '';
     $image = $modelImage;
+    $status = strtolower((string)($row['status'] ?? ''));
+    $isRequestable = in_array($status, ['available', 'checked_out'], true);
 
     $asset = [
         'id' => (int)($row['asset_id'] ?? ($row['id'] ?? 0)),
@@ -34,6 +42,7 @@ function inventory_map_asset_row(array $row): array
         'name' => $row['asset_name'] ?? ($row['name'] ?? ''),
         'model_id' => (int)($row['model_id'] ?? 0),
         'status' => $row['status'] ?? '',
+        'requestable' => $isRequestable,
         'image' => $image ?? '',
     ];
 
@@ -336,7 +345,7 @@ function find_asset_by_tag(string $tag): array
     return inventory_map_asset_row($row);
 }
 
-function search_assets(string $query, int $limit = 20): array
+function search_assets(string $query, int $limit = 20, bool $requestableOnly = false): array
 {
     global $pdo;
 
@@ -348,6 +357,9 @@ function search_assets(string $query, int $limit = 20): array
     $where = [
         '(a.asset_tag LIKE :q OR a.name LIKE :q OR m.name LIKE :q)',
     ];
+    if ($requestableOnly) {
+        $where[] = "a.status IN ('available','checked_out')";
+    }
     $params = [
         ':q' => '%' . $q . '%',
     ];
@@ -438,6 +450,11 @@ function count_assets_by_model(int $modelId): int
     return (int)$stmt->fetchColumn();
 }
 
+function count_requestable_assets_by_model(int $modelId): int
+{
+    return count_assets_by_model($modelId);
+}
+
 function count_checked_out_assets_by_model(int $modelId): int
 {
     global $pdo;
@@ -488,6 +505,89 @@ function find_single_user_by_email_or_name(string $query): array
         throw new Exception("Multiple users matched '{$query}'; please refine (e.g. full email).");
     }
     return $rows[0];
+}
+
+function get_user_by_id(int $userId): array
+{
+    global $pdo;
+    if ($userId <= 0) {
+        return [];
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT id, first_name, last_name, email, username
+          FROM users
+         WHERE id = :id
+         LIMIT 1
+    ");
+    $stmt->execute([':id' => $userId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        return [];
+    }
+
+    $name = trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
+    if ($name === '') {
+        $name = (string)($row['username'] ?? ($row['email'] ?? ''));
+    }
+
+    return [
+        'id' => (int)($row['id'] ?? 0),
+        'name' => $name,
+        'email' => (string)($row['email'] ?? ''),
+        'username' => (string)($row['username'] ?? ''),
+    ];
+}
+
+function find_user_by_email_or_name_with_candidates(string $query): array
+{
+    $q = trim($query);
+    if ($q === '') {
+        throw new InvalidArgumentException('User search query cannot be empty.');
+    }
+
+    $rows = search_users($q, 20);
+    if (empty($rows)) {
+        throw new Exception("No users found matching '{$q}'.");
+    }
+
+    $mapped = [];
+    foreach ($rows as $row) {
+        $mapped[] = [
+            'id' => (int)($row['id'] ?? 0),
+            'name' => (string)($row['name'] ?? ''),
+            'email' => (string)($row['email'] ?? ''),
+            'username' => (string)($row['username'] ?? ''),
+        ];
+    }
+
+    if (count($mapped) === 1) {
+        return ['user' => $mapped[0], 'candidates' => []];
+    }
+
+    $qLower = strtolower($q);
+    $exactEmail = [];
+    $exactName = [];
+    foreach ($mapped as $row) {
+        $email = strtolower(trim((string)($row['email'] ?? '')));
+        $name = strtolower(trim((string)($row['name'] ?? ($row['username'] ?? ''))));
+        if ($email !== '' && $email === $qLower) {
+            $exactEmail[] = $row;
+        }
+        if ($name !== '' && $name === $qLower) {
+            $exactName[] = $row;
+        }
+    }
+
+    if (count($exactEmail) === 1) {
+        return ['user' => $exactEmail[0], 'candidates' => []];
+    }
+    if (count($exactName) === 1) {
+        return ['user' => $exactName[0], 'candidates' => []];
+    }
+
+    $candidates = !empty($exactEmail) ? $exactEmail : (!empty($exactName) ? $exactName : $mapped);
+    return ['user' => null, 'candidates' => $candidates];
 }
 
 function checkout_asset_to_user(int $assetId, int $userId, string $note = '', ?string $expectedCheckin = null): void

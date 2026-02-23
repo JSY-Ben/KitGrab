@@ -4,18 +4,29 @@ require_once SRC_PATH . '/auth.php';
 require_once SRC_PATH . '/inventory_client.php';
 require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/layout.php';
+require_once SRC_PATH . '/reservation_policy.php';
 
 $active  = basename($_SERVER['PHP_SELF']);
 $isAdmin = !empty($currentUser['is_admin']);
 $isStaff = !empty($currentUser['is_staff']) || $isAdmin;
+$bookingOverride = $_SESSION['booking_user_override'] ?? null;
+$bookingTargetUser = $bookingOverride ?: $currentUser;
+$overrideEmail = strtolower(trim((string)($bookingOverride['email'] ?? '')));
+$currentEmail = strtolower(trim((string)($currentUser['email'] ?? '')));
+$isOnBehalfBooking = is_array($bookingOverride) && $overrideEmail !== '' && $overrideEmail !== $currentEmail;
+$reservationPolicy = reservation_policy_get($config);
 
 // Basket: model_id => quantity
 $basket = $_SESSION['basket'] ?? [];
 
 // Preview availability dates (from GET) with sensible defaults
-$now = new DateTime();
+$windowTz = app_get_timezone($config);
+$now = $windowTz ? new DateTime('now', $windowTz) : new DateTime('now');
 $defaultStart = $now->format('Y-m-d\TH:i');
-$defaultEnd   = (new DateTime('tomorrow 9:00'))->format('Y-m-d\TH:i');
+$defaultEndDt = clone $now;
+$defaultEndDt->modify('+1 day');
+$defaultEndDt->setTime(9, 0, 0);
+$defaultEnd   = $defaultEndDt->format('Y-m-d\TH:i');
 
 $previewStartRaw = $_GET['start_datetime'] ?? '';
 $previewEndRaw   = $_GET['end_datetime'] ?? '';
@@ -39,21 +50,36 @@ if (trim($previewEndRaw) === '') {
 $previewStart = null;
 $previewEnd   = null;
 $previewError = '';
+$previewStartTs = false;
+$previewEndTs = false;
+$policyViolations = [];
 
 if ($previewStartRaw && $previewEndRaw) {
-    $startTs = strtotime($previewStartRaw);
-    $endTs   = strtotime($previewEndRaw);
+    $previewStartTs = strtotime($previewStartRaw);
+    $previewEndTs   = strtotime($previewEndRaw);
 
-    if ($startTs === false || $endTs === false) {
+    if ($previewStartTs === false || $previewEndTs === false) {
         $previewError = 'Invalid date/time for availability preview.';
-    } elseif ($endTs <= $startTs) {
+    } elseif ($previewEndTs <= $previewStartTs) {
         $previewError = 'End time must be after start time for availability preview.';
     } else {
-        $previewStart = date('Y-m-d H:i:s', $startTs);
-        $previewEnd   = date('Y-m-d H:i:s', $endTs);
+        $previewStart = date('Y-m-d H:i:s', $previewStartTs);
+        $previewEnd   = date('Y-m-d H:i:s', $previewEndTs);
         $_SESSION['reservation_window_start'] = $previewStartRaw;
         $_SESSION['reservation_window_end']   = $previewEndRaw;
     }
+}
+
+if ($previewStart && $previewEnd) {
+    $policyViolations = reservation_policy_validate_booking($pdo, $reservationPolicy, [
+        'start_ts' => (int)$previewStartTs,
+        'end_ts' => (int)$previewEndTs,
+        'target_user_id' => (string)($bookingTargetUser['id'] ?? ''),
+        'target_user_email' => (string)($bookingTargetUser['email'] ?? ''),
+        'is_admin' => $isAdmin,
+        'is_staff' => $isStaff,
+        'is_on_behalf' => $isOnBehalfBooking,
+    ]);
 }
 
 $catalogueBackUrl = 'catalogue.php';
@@ -61,6 +87,7 @@ if ($previewStartRaw !== '' && $previewEndRaw !== '') {
     $catalogueBackUrl .= '?' . http_build_query([
         'start_datetime' => $previewStartRaw,
         'end_datetime'   => $previewEndRaw,
+        'prefetch'       => 1,
     ]);
 }
 
@@ -80,19 +107,19 @@ if (!empty($basket)) {
             $modelId = (int)$modelId;
             $qty     = (int)$qty;
 
-            // Count assets for limits/availability
-            $assetCount = null;
+            // Count requestable assets for limits/availability
+            $requestableCount = null;
             try {
-                $assetCount = count_assets_by_model($modelId);
+                $requestableCount = count_requestable_assets_by_model($modelId);
             } catch (Throwable $e) {
-                $assetCount = null;
+                $requestableCount = null;
             }
 
             $models[] = [
                 'id'                => $modelId,
                 'data'              => get_model($modelId),
                 'qty'               => $qty,
-                'asset_count' => $assetCount,
+                'requestable_count' => $requestableCount,
             ];
             $totalItems     += $qty;
             $distinctModels += 1;
@@ -102,7 +129,7 @@ if (!empty($basket)) {
         if ($previewStart && $previewEnd) {
             foreach ($models as $entry) {
                 $mid = (int)$entry['id'];
-                $assetTotal = $entry['asset_count'] ?? null;
+                $requestableTotal = $entry['requestable_count'] ?? null;
 
                 // How many units already booked in that time range?
                 $sql = "
@@ -128,23 +155,23 @@ if (!empty($basket)) {
                 $activeCheckedOut = count_checked_out_assets_by_model($mid);
                 $booked = $pendingQty + $activeCheckedOut;
 
-                // Total units in local inventory
-                if ($assetTotal === null) {
+                // Total requestable units in local inventory
+                if ($requestableTotal === null) {
                     try {
-                        $assetTotal = count_assets_by_model($mid);
+                        $requestableTotal = count_requestable_assets_by_model($mid);
                     } catch (Throwable $e) {
-                        $assetTotal = 0;
+                        $requestableTotal = 0;
                     }
                 }
 
-                if ($assetTotal > 0) {
-                    $free = max(0, $assetTotal - $booked);
+                if ($requestableTotal > 0) {
+                    $free = max(0, $requestableTotal - $booked);
                 } else {
                     $free = null; // unknown
                 }
 
                 $availability[$mid] = [
-                    'total'  => $assetTotal,
+                    'total'  => $requestableTotal,
                     'booked' => $booked,
                     'free'   => $free,
                 ];
@@ -168,7 +195,9 @@ if (!empty($basket)) {
     <link rel="stylesheet" href="assets/style.css">
     <?= layout_theme_styles() ?>
 </head>
-<body class="p-4">
+<body class="p-4"
+      data-date-format="<?= h(app_get_date_format()) ?>"
+      data-time-format="<?= h(app_get_time_format()) ?>">
 <div class="container">
     <div class="page-shell">
         <?= layout_logo_tag() ?>
@@ -197,7 +226,7 @@ if (!empty($basket)) {
 
         <?php if ($errorMsg): ?>
             <div class="alert alert-danger">
-                Error loading inventory data: <?= htmlspecialchars($errorMsg) ?>
+                Error talking to local inventory: <?= htmlspecialchars($errorMsg) ?>
             </div>
         <?php endif; ?>
 
@@ -220,14 +249,24 @@ if (!empty($basket)) {
                 <div class="alert alert-info">
                     Showing availability for:
                     <strong>
-                        <?= h(layout_format_datetime($previewStart)) ?>
+                        <?= h(app_format_datetime($previewStart)) ?>
                         &ndash;
-                        <?= h(layout_format_datetime($previewEnd)) ?>
+                        <?= h(app_format_datetime($previewEnd)) ?>
                     </strong>
                 </div>
             <?php else: ?>
                 <div class="alert alert-secondary">
                     Choose a start and end date below to automatically refresh availability.
+                </div>
+            <?php endif; ?>
+            <?php if (!empty($policyViolations)): ?>
+                <div class="alert alert-danger">
+                    <div class="fw-semibold mb-2">Reservation window not allowed:</div>
+                    <ul class="mb-0">
+                        <?php foreach ($policyViolations as $violation): ?>
+                            <li><?= h($violation) ?></li>
+                        <?php endforeach; ?>
+                    </ul>
                 </div>
             <?php endif; ?>
 
@@ -264,7 +303,7 @@ if (!empty($basket)) {
                                 } elseif ($a['total'] > 0) {
                                     $availText = $a['total'] . ' units total (unable to compute free units)';
                                 } else {
-                                    $availText = 'Availability unknown (no total count available)';
+                                    $availText = 'Availability unknown (no total count from local inventory)';
                                 }
                             }
                         ?>
@@ -294,19 +333,26 @@ if (!empty($basket)) {
                 </div>
                 <form method="get" action="basket.php" id="basket-window-form">
                     <div class="row g-3">
-                        <div class="col-md-6">
+                        <div class="col-md-5">
                             <label class="form-label fw-semibold">Start date &amp; time</label>
                             <input type="datetime-local" name="start_datetime"
                                    id="basket_start_datetime"
                                    class="form-control form-control-lg"
                                    value="<?= htmlspecialchars($previewStartRaw) ?>">
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-5">
                             <label class="form-label fw-semibold">End date &amp; time</label>
                             <input type="datetime-local" name="end_datetime"
                                    id="basket_end_datetime"
                                    class="form-control form-control-lg"
                                    value="<?= htmlspecialchars($previewEndRaw) ?>">
+                        </div>
+                        <div class="col-md-2 d-grid align-items-end">
+                            <button class="btn btn-primary btn-lg w-100 flex-md-fill mt-3 mt-md-0 reservation-window-btn"
+                                    type="button"
+                                    id="basket-today-btn">
+                                Today
+                            </button>
                         </div>
                     </div>
                 </form>
@@ -326,12 +372,16 @@ if (!empty($basket)) {
 
                 <button class="btn btn-primary btn-lg px-4"
                         type="submit"
-                        <?= (!$previewStart || !$previewEnd) ? 'disabled' : '' ?>>
+                        <?= (!$previewStart || !$previewEnd || !empty($policyViolations)) ? 'disabled' : '' ?>>
                     Confirm booking for all items
                 </button>
                 <?php if (!$previewStart || !$previewEnd): ?>
                     <span class="ms-2 text-danger small">
                         Please choose a valid reservation window.
+                    </span>
+                <?php elseif (!empty($policyViolations)): ?>
+                    <span class="ms-2 text-danger small">
+                        Please resolve the reservation rule violations above.
                     </span>
                 <?php endif; ?>
             </form>
@@ -347,10 +397,14 @@ document.addEventListener('DOMContentLoaded', function () {
     const windowForm = document.getElementById('basket-window-form');
     const startInput = document.getElementById('basket_start_datetime');
     const endInput = document.getElementById('basket_end_datetime');
+    const todayBtn = document.getElementById('basket-today-btn');
+    const windowScrollRestoreKey = 'kitgrab:basketWindowScrollY';
     let windowSubmitInFlight = false;
     let lastSubmittedWindow = (startInput && endInput)
         ? (startInput.value.trim() + '|' + endInput.value.trim())
         : '';
+    let nativeWindowDirty = false;
+    let nativeWindowBlurTimer = null;
 
     function toLocalDatetimeValue(date) {
         const pad = function (n) { return String(n).padStart(2, '0'); };
@@ -359,6 +413,15 @@ document.addEventListener('DOMContentLoaded', function () {
             + '-' + pad(date.getDate())
             + 'T' + pad(date.getHours())
             + ':' + pad(date.getMinutes());
+    }
+
+    function setDatetimeInputValue(input, value) {
+        if (!input) return;
+        if (input._flatpickr) {
+            input._flatpickr.setDate(value, true, input._flatpickr.config.dateFormat);
+            return;
+        }
+        input.value = value;
     }
 
     function normalizeWindowEnd() {
@@ -374,8 +437,88 @@ document.addEventListener('DOMContentLoaded', function () {
             const nextDay = new Date(startDate);
             nextDay.setDate(startDate.getDate() + 1);
             nextDay.setHours(9, 0, 0, 0);
-            endInput.value = toLocalDatetimeValue(nextDay);
+            setDatetimeInputValue(endInput, toLocalDatetimeValue(nextDay));
         }
+    }
+
+    function saveWindowScrollPosition() {
+        try {
+            const y = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
+            window.sessionStorage.setItem(windowScrollRestoreKey, String(y));
+        } catch (e) {
+            // Ignore storage errors (private mode / blocked storage).
+        }
+    }
+
+    function restoreWindowScrollPosition() {
+        try {
+            const raw = window.sessionStorage.getItem(windowScrollRestoreKey);
+            if (raw === null) return;
+            window.sessionStorage.removeItem(windowScrollRestoreKey);
+            const target = parseInt(raw, 10);
+            if (!Number.isFinite(target)) return;
+
+            const scrollToSavedY = function () {
+                const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+                const maxY = Math.max(0, document.documentElement.scrollHeight - Math.max(1, viewportHeight));
+                const nextY = Math.max(0, Math.min(maxY, target));
+                window.scrollTo(0, nextY);
+            };
+
+            window.requestAnimationFrame(function () {
+                scrollToSavedY();
+                window.setTimeout(scrollToSavedY, 120);
+            });
+        } catch (e) {
+            // Ignore storage errors (private mode / blocked storage).
+        }
+    }
+
+    restoreWindowScrollPosition();
+
+    function centerCalendarInstance(instance) {
+        if (!instance || !instance.calendarContainer) return;
+
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        if (viewportHeight <= 0) return;
+
+        const calendar = instance.calendarContainer;
+        const topPadding = 16;
+        const bottomPadding = 16;
+        const availableHeight = Math.max(1, viewportHeight - topPadding - bottomPadding);
+
+        const rect = calendar.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
+
+        let targetTop = topPadding;
+        if (rect.height < availableHeight) {
+            targetTop = topPadding + ((availableHeight - rect.height) / 2);
+        }
+
+        const desiredY = window.scrollY + (rect.top - targetTop);
+        const maxScrollY = Math.max(0, document.documentElement.scrollHeight - viewportHeight);
+        const nextY = Math.max(0, Math.min(maxScrollY, desiredY));
+        if (Math.abs(nextY - window.scrollY) < 2) return;
+
+        const reduceMotion = window.matchMedia
+            && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        window.scrollTo({
+            top: nextY,
+            behavior: reduceMotion ? 'auto' : 'smooth',
+        });
+    }
+
+    function bindPickerCentering(input) {
+        if (!input || !input._flatpickr || input._flatpickr.__basketCenterBound) return;
+        input._flatpickr.__basketCenterBound = true;
+        input._flatpickr.config.onOpen.push(function (_selectedDates, _dateStr, instance) {
+            window.requestAnimationFrame(function () {
+                centerCalendarInstance(instance);
+                window.setTimeout(function () {
+                    centerCalendarInstance(instance);
+                }, 90);
+            });
+        });
     }
 
     function maybeSubmitWindow() {
@@ -390,7 +533,49 @@ document.addEventListener('DOMContentLoaded', function () {
         if (windowKey === lastSubmittedWindow) return;
         lastSubmittedWindow = windowKey;
         windowSubmitInFlight = true;
+        saveWindowScrollPosition();
         windowForm.submit();
+    }
+
+    function isNativeWindowMode() {
+        return !!(startInput && endInput && !startInput._flatpickr && !endInput._flatpickr);
+    }
+
+    function maybeSubmitNativeWindowOnBlur() {
+        if (!isNativeWindowMode() || !nativeWindowDirty) return;
+        if (nativeWindowBlurTimer) {
+            clearTimeout(nativeWindowBlurTimer);
+        }
+        nativeWindowBlurTimer = window.setTimeout(function () {
+            const activeElement = document.activeElement;
+            if (activeElement === startInput || activeElement === endInput) {
+                return;
+            }
+            nativeWindowDirty = false;
+            maybeSubmitWindow();
+        }, 120);
+    }
+
+    function setTodayWindow() {
+        if (!startInput || !endInput) return;
+        const now = new Date();
+        const tomorrow = new Date(now);
+        tomorrow.setDate(now.getDate() + 1);
+        tomorrow.setHours(9, 0, 0, 0);
+        setDatetimeInputValue(startInput, toLocalDatetimeValue(now));
+        setDatetimeInputValue(endInput, toLocalDatetimeValue(tomorrow));
+        maybeSubmitWindow();
+    }
+
+    function bindFlatpickrApplySubmit(input) {
+        if (!input || !input._flatpickr || !input._flatpickr.calendarContainer) return;
+        const confirmButton = input._flatpickr.calendarContainer.querySelector('.flatpickr-confirm');
+        if (!confirmButton || confirmButton.dataset.windowApplyBound === '1') return;
+        confirmButton.dataset.windowApplyBound = '1';
+        confirmButton.addEventListener('click', function () {
+            normalizeWindowEnd();
+            maybeSubmitWindow();
+        });
     }
 
     if (windowForm) {
@@ -399,26 +584,35 @@ document.addEventListener('DOMContentLoaded', function () {
                 lastSubmittedWindow = startInput.value.trim() + '|' + endInput.value.trim();
             }
             windowSubmitInFlight = true;
+            saveWindowScrollPosition();
         });
     }
 
     if (startInput && endInput) {
         startInput.addEventListener('change', function () {
             normalizeWindowEnd();
-            maybeSubmitWindow();
+            if (isNativeWindowMode()) {
+                nativeWindowDirty = true;
+                maybeSubmitNativeWindowOnBlur();
+            }
         });
         endInput.addEventListener('change', function () {
             normalizeWindowEnd();
-            maybeSubmitWindow();
+            if (isNativeWindowMode()) {
+                nativeWindowDirty = true;
+                maybeSubmitNativeWindowOnBlur();
+            }
         });
-        startInput.addEventListener('blur', function () {
-            normalizeWindowEnd();
-            maybeSubmitWindow();
-        });
-        endInput.addEventListener('blur', function () {
-            normalizeWindowEnd();
-            maybeSubmitWindow();
-        });
+        startInput.addEventListener('blur', maybeSubmitNativeWindowOnBlur);
+        endInput.addEventListener('blur', maybeSubmitNativeWindowOnBlur);
+        bindFlatpickrApplySubmit(startInput);
+        bindFlatpickrApplySubmit(endInput);
+        bindPickerCentering(startInput);
+        bindPickerCentering(endInput);
+    }
+
+    if (todayBtn) {
+        todayBtn.addEventListener('click', setTodayWindow);
     }
 });
 </script>

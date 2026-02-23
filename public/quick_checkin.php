@@ -5,7 +5,6 @@
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once SRC_PATH . '/auth.php';
 require_once SRC_PATH . '/inventory_client.php';
-require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/activity_log.php';
 require_once SRC_PATH . '/email.php';
 require_once SRC_PATH . '/layout.php';
@@ -29,7 +28,7 @@ if (($_GET['ajax'] ?? '') === 'asset_search') {
     }
 
     try {
-        $rows = search_assets($q, 20);
+        $rows = search_assets($q, 20, true);
         $results = [];
         foreach ($rows as $row) {
             $results[] = [
@@ -79,16 +78,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $assetName = $asset['name'] ?? '';
                 $modelName = $asset['model']['name'] ?? '';
                 $status    = $asset['status_label'] ?? '';
-                $statusValue = strtolower((string)($asset['status'] ?? ''));
                 if (is_array($status)) {
                     $status = $status['name'] ?? $status['status_meta'] ?? $status['label'] ?? '';
                 }
-                if ($status === '' && $statusValue !== '') {
-                    $status = ucwords(str_replace('_', ' ', $statusValue));
-                }
 
                 if ($assetId <= 0 || $assetTag === '') {
-                    throw new Exception('Asset record is missing id/asset_tag.');
+                    throw new Exception('Asset record from local inventory is missing id/asset_tag.');
                 }
 
                 $assigned = $asset['assigned_to'] ?? null;
@@ -145,6 +140,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $assignedEmail = $asset['assigned_email'] ?? '';
                     $assignedName  = $asset['assigned_name'] ?? '';
                     $assignedId    = (int)($asset['assigned_id'] ?? 0);
+                    if (($assignedEmail === '' && $assignedName === '') || $assignedId === 0) {
+                        try {
+                            $freshAsset = get_asset($assetId);
+                            $freshAssigned = $freshAsset['assigned_to'] ?? null;
+                            if (empty($freshAssigned) && isset($freshAsset['assigned_to_fullname'])) {
+                                $freshAssigned = $freshAsset['assigned_to_fullname'];
+                            }
+                            if (is_array($freshAssigned)) {
+                                $assignedId    = (int)($freshAssigned['id'] ?? $assignedId);
+                                $assignedEmail = $freshAssigned['email'] ?? ($freshAssigned['username'] ?? $assignedEmail);
+                                $assignedName  = $freshAssigned['name'] ?? ($freshAssigned['username'] ?? ($freshAssigned['email'] ?? $assignedName));
+                            } elseif (is_string($freshAssigned) && $assignedName === '') {
+                                $assignedName = $freshAssigned;
+                            }
+                        } catch (Throwable $e) {
+                            // Skip fresh lookup; proceed with stored assignment data.
+                        }
+                    }
+
                     checkin_asset($assetId, $note);
                     $messages[] = "Checked in asset {$assetTag}.";
                     $model = $asset['model'] ?? '';
@@ -157,20 +171,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $assignedEmail = $cached['email'] ?? '';
                             $assignedName = $assignedName !== '' ? $assignedName : ($cached['name'] ?? '');
                         } else {
-                            $stmt = $pdo->prepare("SELECT email, first_name, last_name FROM users WHERE id = :id LIMIT 1");
-                            $stmt->execute([':id' => $assignedId]);
-                            $matchedUser = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-                            $matchedEmail = $matchedUser['email'] ?? '';
-                            $matchedName  = trim(($matchedUser['first_name'] ?? '') . ' ' . ($matchedUser['last_name'] ?? ''));
-                            $userIdCache[$assignedId] = [
-                                'email' => $matchedEmail,
-                                'name'  => $matchedName,
-                            ];
-                            if ($matchedEmail !== '') {
-                                $assignedEmail = $matchedEmail;
-                            }
-                            if ($assignedName === '' && $matchedName !== '') {
-                                $assignedName = $matchedName;
+                            try {
+                                $matchedUser = get_user_by_id($assignedId);
+                                $matchedEmail = $matchedUser['email'] ?? ($matchedUser['username'] ?? '');
+                                $matchedName  = $matchedUser['name'] ?? ($matchedUser['username'] ?? '');
+                                $userIdCache[$assignedId] = [
+                                    'email' => $matchedEmail,
+                                    'name'  => $matchedName,
+                                ];
+                                if ($matchedEmail !== '') {
+                                    $assignedEmail = $matchedEmail;
+                                }
+                                if ($assignedName === '' && $matchedName !== '') {
+                                    $assignedName = $matchedName;
+                                }
+                            } catch (Throwable $e) {
+                                // Skip lookup failure; user details may be unavailable.
                             }
                         }
                     }
@@ -180,11 +196,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $assignedEmail = $userLookupCache[$cacheKey];
                         } else {
                             try {
-                                $matchedUser = find_single_user_by_email_or_name($assignedName);
-                                $matchedEmail = $matchedUser['email'] ?? ($matchedUser['username'] ?? '');
-                                if ($matchedEmail !== '') {
-                                    $assignedEmail = $matchedEmail;
-                                    $userLookupCache[$cacheKey] = $matchedEmail;
+                                $result = find_user_by_email_or_name_with_candidates($assignedName);
+                                $picked = $result['user'] ?? null;
+
+                                if (!is_array($picked) && !empty($result['candidates']) && is_array($result['candidates'])) {
+                                    $nameLower = strtolower(trim($assignedName));
+                                    foreach ($result['candidates'] as $candidate) {
+                                        $rowName = strtolower(trim((string)($candidate['name'] ?? '')));
+                                        $rowEmail = strtolower(trim((string)($candidate['email'] ?? ($candidate['username'] ?? ''))));
+                                        if (($rowName !== '' && $rowName === $nameLower) || ($rowEmail !== '' && $rowEmail === $nameLower)) {
+                                            $picked = $candidate;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                if (is_array($picked)) {
+                                    $matchedEmail = $picked['email'] ?? ($picked['username'] ?? '');
+                                    if ($matchedEmail !== '') {
+                                        $assignedEmail = $matchedEmail;
+                                        $userLookupCache[$cacheKey] = $matchedEmail;
+                                    }
+                                    if ($assignedName === '') {
+                                        $assignedName = $picked['name'] ?? ($picked['username'] ?? '');
+                                    }
                                 }
                             } catch (Throwable $e) {
                                 // Skip lookup failure; user email may be unavailable.
@@ -265,7 +300,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $checkedInFrom = array_keys($summaryBuckets);
-                activity_log_event('asset_checkin', 'Quick checkin completed', [
+                activity_log_event('quick_checkin', 'Quick checkin completed', [
                     'metadata' => [
                         'assets' => $assetTags,
                         'checked_in_from' => $checkedInFrom,
@@ -298,7 +333,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="page-header">
             <h1>Quick Checkin</h1>
             <div class="page-subtitle">
-                Scan or type asset tags to check items back in.
+                Scan or type asset tags to check items back in via local inventory.
             </div>
         </div>
 

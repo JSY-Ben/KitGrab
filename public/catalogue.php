@@ -22,7 +22,62 @@ $debugOn  = !empty($appCfg['debug']);
 $blockCatalogueOverdue = array_key_exists('block_catalogue_overdue', $appCfg)
     ? !empty($appCfg['block_catalogue_overdue'])
     : true;
-$overdueCacheTtl = (int)($appCfg['catalogue_cache_ttl'] ?? 0);
+$overdueCacheTtl = 0;
+
+$catalogueAnnouncements = [];
+$allAnnouncements = app_announcements_from_app_config($appCfg, app_get_timezone($config));
+// Only advance session "shown" state on the actual rendered catalogue view,
+// not on the lightweight redirect shell request.
+$isRenderedCatalogueRequest = $_SERVER['REQUEST_METHOD'] === 'GET'
+    && isset($_GET['prefetch'])
+    && !isset($_GET['ajax']);
+if ($isRenderedCatalogueRequest && !empty($allAnnouncements)) {
+    $activeAnnouncements = app_announcements_active($allAnnouncements, time());
+    if (!empty($activeAnnouncements)) {
+        $announcementToken = app_announcements_session_token($activeAnnouncements);
+        $shownAnnouncementToken = trim((string)($_SESSION['catalogue_announcement_shown_token'] ?? ''));
+        $shownAnnouncementSource = trim((string)($_SESSION['catalogue_announcement_shown_source'] ?? ''));
+        $alreadyShownThisSession = ($shownAnnouncementToken === $announcementToken)
+            && ($shownAnnouncementSource === 'rendered_catalogue');
+        if (!$alreadyShownThisSession) {
+            $catalogueAnnouncements = $activeAnnouncements;
+            $_SESSION['catalogue_announcement_shown_token'] = $announcementToken;
+            $_SESSION['catalogue_announcement_shown_source'] = 'rendered_catalogue';
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['prefetch']) && !isset($_GET['ajax'])) {
+    $query = $_GET;
+    $query['prefetch'] = 1;
+    $fullUrl = 'catalogue.php' . (empty($query) ? '' : '?' . http_build_query($query));
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Catalogue – Book Equipment</title>
+        <link rel="stylesheet"
+              href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+        <link rel="stylesheet" href="assets/style.css">
+        <?= layout_theme_styles() ?>
+    </head>
+    <body class="p-4">
+        <div class="loading-overlay">
+            <div class="loading-card">
+                <div class="loading-spinner" aria-hidden="true"></div>
+                <div class="loading-text">Fetching assets...</div>
+            </div>
+        </div>
+        <script>
+            window.location.replace("<?= h($fullUrl) ?>");
+        </script>
+    </body>
+    </html>
+    <?php
+    exit;
+}
 
 if (($_GET['ajax'] ?? '') === 'overdue_check') {
     header('Content-Type: application/json');
@@ -51,14 +106,14 @@ if (($_GET['ajax'] ?? '') === 'overdue_check') {
     }
 
     try {
-        $lookupKeys = array_values(array_filter(array_unique(array_map('normalize_lookup_key', [
+        $lookupSqlValues = build_sql_lookup_values(
             $activeUserEmail,
             $activeUserUsername,
             $activeUserDisplay,
-            $activeUserName,
-        ])), 'strlen'));
+            $activeUserName
+        );
 
-        $localUserId = 0;
+        $inventoryUserId = 0;
         $lookupQueries = array_values(array_filter(array_unique([
             $activeUserEmail,
             $activeUserUsername,
@@ -69,8 +124,8 @@ if (($_GET['ajax'] ?? '') === 'overdue_check') {
         foreach ($lookupQueries as $query) {
             try {
                 $matched = find_single_user_by_email_or_name($query);
-                $localUserId = (int)($matched['id'] ?? 0);
-                if ($localUserId > 0) {
+                $inventoryUserId = (int)($matched['id'] ?? 0);
+                if ($inventoryUserId > 0) {
                     break;
                 }
             } catch (Throwable $e) {
@@ -78,21 +133,7 @@ if (($_GET['ajax'] ?? '') === 'overdue_check') {
             }
         }
 
-        $overdueCandidates = list_checked_out_assets(true);
-        $overdueAssets = [];
-        foreach ($overdueCandidates as $row) {
-            if (row_assigned_to_matches_user($row, $lookupKeys, $localUserId)) {
-                $tag = $row['asset_tag'] ?? 'Unknown tag';
-                $modelName = $row['model']['name'] ?? '';
-                $expected = $row['_expected_checkin_norm'] ?? ($row['expected_checkin'] ?? '');
-                $due = format_overdue_date($expected);
-                $overdueAssets[] = [
-                    'tag'   => $tag,
-                    'model' => $modelName,
-                    'due'   => $due,
-                ];
-            }
-        }
+        $overdueAssets = fetch_overdue_assets_for_user($lookupSqlValues, $inventoryUserId);
 
         $payload = [
             'blocked' => !empty($overdueAssets),
@@ -235,7 +276,11 @@ function google_directory_search(string $q, array $config): array
     }
 
     $qEsc = str_replace(['\\', '"'], ['\\\\', '\"'], $q);
-    $query = 'email:' . $qEsc . '* OR name:' . $qEsc . '*';
+    $qWild = '*' . $qEsc . '*';
+    $query = 'email:' . $qWild
+        . ' OR name:' . $qWild
+        . ' OR givenName:' . $qWild
+        . ' OR familyName:' . $qWild;
     $url = 'https://admin.googleapis.com/admin/directory/v1/users?'
         . http_build_query([
             'query'      => $query,
@@ -279,19 +324,50 @@ function entra_directory_search(string $q, array $config): array
         return [];
     }
 
-    $qEsc = str_replace("'", "''", $q);
-    $filter = "startswith(displayName,'{$qEsc}') or startswith(mail,'{$qEsc}') or startswith(userPrincipalName,'{$qEsc}')";
-    $url = 'https://graph.microsoft.com/v1.0/users?'
-        . http_build_query([
-            '$select' => 'displayName,mail,userPrincipalName',
-            '$top'    => 20,
-            '$filter' => $filter,
-        ]);
+    $data = null;
+    try {
+        $qSearch = str_replace('"', '\"', $q);
+        $search = '"displayName:' . $qSearch . '"'
+            . ' OR "mail:' . $qSearch . '"'
+            . ' OR "userPrincipalName:' . $qSearch . '"'
+            . ' OR "givenName:' . $qSearch . '"'
+            . ' OR "surname:' . $qSearch . '"';
+        $url = 'https://graph.microsoft.com/v1.0/users?'
+            . http_build_query([
+                '$select' => 'displayName,mail,userPrincipalName',
+                '$top'    => 20,
+                '$count'  => 'true',
+                '$search' => $search,
+            ]);
 
-    $data = http_get_json($url, [
-        'Authorization: Bearer ' . $accessToken,
-        'Accept: application/json',
-    ]);
+        $data = http_get_json($url, [
+            'Authorization: Bearer ' . $accessToken,
+            'ConsistencyLevel: eventual',
+            'Accept: application/json',
+        ]);
+    } catch (Throwable $e) {
+        $data = null;
+    }
+
+    if (!is_array($data)) {
+        $qEsc = str_replace("'", "''", $q);
+        $filter = "startswith(displayName,'{$qEsc}')"
+            . " or startswith(mail,'{$qEsc}')"
+            . " or startswith(userPrincipalName,'{$qEsc}')"
+            . " or startswith(givenName,'{$qEsc}')"
+            . " or startswith(surname,'{$qEsc}')";
+        $url = 'https://graph.microsoft.com/v1.0/users?'
+            . http_build_query([
+                '$select' => 'displayName,mail,userPrincipalName',
+                '$top'    => 20,
+                '$filter' => $filter,
+            ]);
+
+        $data = http_get_json($url, [
+            'Authorization: Bearer ' . $accessToken,
+            'Accept: application/json',
+        ]);
+    }
 
     $results = [];
     $users = $data['value'] ?? [];
@@ -433,7 +509,7 @@ if ($isStaff && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['mode'] ?? '') 
 $active  = basename($_SERVER['PHP_SELF']);
 
 // ---------------------------------------------------------------------
-// Helper: decode strings safely
+// Helper: decode local inventory strings safely
 // ---------------------------------------------------------------------
 function label_safe(?string $str): string
 {
@@ -449,41 +525,135 @@ function format_overdue_date($val): string
     if (is_array($val)) {
         $val = $val['datetime'] ?? ($val['date'] ?? '');
     }
-    return layout_format_date($val);
+    if (empty($val)) {
+        return '';
+    }
+    return app_format_date($val);
 }
 
-function normalize_lookup_key(?string $value): string
+function build_name_variants(string $value): array
 {
-    return strtolower(trim($value ?? ''));
-}
-
-function row_assigned_to_matches_user(array $row, array $keys, int $userId): bool
-{
-    $assigned = $row['assigned_to'] ?? ($row['assigned_to_fullname'] ?? '');
-    $assignedId = 0;
-    $assignedKeys = [];
-
-    if (is_array($assigned)) {
-        $assignedId = (int)($assigned['id'] ?? 0);
-        $assignedKeys[] = $assigned['email'] ?? '';
-        $assignedKeys[] = $assigned['username'] ?? '';
-        $assignedKeys[] = $assigned['name'] ?? '';
-    } elseif (is_string($assigned)) {
-        $assignedKeys[] = $assigned;
+    $value = trim($value);
+    if ($value === '') {
+        return [];
     }
 
-    if ($userId > 0 && $assignedId === $userId) {
-        return true;
-    }
-
-    foreach ($assignedKeys as $key) {
-        $norm = normalize_lookup_key($key);
-        if ($norm !== '' && in_array($norm, $keys, true)) {
-            return true;
+    $variants = [$value];
+    if (strpos($value, ',') !== false) {
+        $parts = array_map('trim', explode(',', $value, 2));
+        if (count($parts) === 2 && $parts[0] !== '' && $parts[1] !== '') {
+            $variants[] = $parts[1] . ' ' . $parts[0];
+        }
+    } else {
+        $parts = preg_split('/\\s+/', $value);
+        if (count($parts) >= 2) {
+            $first = array_shift($parts);
+            $last = array_pop($parts);
+            if ($first !== '' && $last !== '') {
+                $variants[] = $last . ' ' . $first;
+            }
         }
     }
 
-    return false;
+    $variants = array_values(array_filter(array_unique($variants), 'strlen'));
+    return $variants;
+}
+
+function build_sql_lookup_values(string $email, string $username, string $display, string $name): array
+{
+    $email = strtolower(trim($email));
+    $username = strtolower(trim($username));
+    $nameVariants = array_merge(
+        build_name_variants($name),
+        build_name_variants($display)
+    );
+    $nameVariants = array_values(array_filter(array_unique(array_map('strtolower', $nameVariants)), 'strlen'));
+
+    return [
+        'emails' => $email !== '' ? [$email] : [],
+        'usernames' => $username !== '' ? [$username] : [],
+        'names' => $nameVariants,
+    ];
+}
+
+function expected_to_timestamp($value): ?int
+{
+    if (is_array($value)) {
+        $value = $value['datetime'] ?? ($value['date'] ?? '');
+    }
+    $value = trim((string)$value);
+    if ($value === '') {
+        return null;
+    }
+    if (preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $value)) {
+        $value .= ' 23:59:59';
+    }
+    $ts = strtotime($value);
+    if ($ts === false) {
+        return null;
+    }
+    return $ts;
+}
+
+function fetch_overdue_assets_for_user(array $lookup, int $inventoryUserId): array
+{
+    global $pdo;
+
+    $where = [];
+    $params = [];
+    if ($inventoryUserId > 0) {
+        $where[] = 'assigned_to_id = ?';
+        $params[] = $inventoryUserId;
+    }
+    if (!empty($lookup['emails'])) {
+        $placeholders = implode(',', array_fill(0, count($lookup['emails']), '?'));
+        $where[] = "(assigned_to_email IS NOT NULL AND LOWER(assigned_to_email) IN ({$placeholders}))";
+        $params = array_merge($params, $lookup['emails']);
+    }
+    if (!empty($lookup['usernames'])) {
+        $placeholders = implode(',', array_fill(0, count($lookup['usernames']), '?'));
+        $where[] = "(assigned_to_username IS NOT NULL AND LOWER(assigned_to_username) IN ({$placeholders}))";
+        $params = array_merge($params, $lookup['usernames']);
+    }
+    if (!empty($lookup['names'])) {
+        $placeholders = implode(',', array_fill(0, count($lookup['names']), '?'));
+        $where[] = "(assigned_to_name IS NOT NULL AND LOWER(assigned_to_name) IN ({$placeholders}))";
+        $params = array_merge($params, $lookup['names']);
+    }
+
+    if (empty($where)) {
+        return [];
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT asset_tag, model_name, expected_checkin
+          FROM checked_out_asset_cache
+         WHERE " . implode(' OR ', $where)
+    );
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    if (!$rows) {
+        return [];
+    }
+
+    $now = time();
+    $overdueAssets = [];
+    foreach ($rows as $row) {
+        $ts = expected_to_timestamp($row['expected_checkin'] ?? '');
+        if ($ts === null || $ts > $now) {
+            continue;
+        }
+        $tag = $row['asset_tag'] ?? 'Unknown tag';
+        $modelName = $row['model_name'] ?? '';
+        $due = format_overdue_date($row['expected_checkin'] ?? '');
+        $overdueAssets[] = [
+            'tag' => $tag,
+            'model' => $modelName,
+            'due' => $due,
+        ];
+    }
+
+    return $overdueAssets;
 }
 
 function normalize_model_notes_text($notes): string
@@ -609,8 +779,8 @@ function fetch_catalogue_model_bookings(PDO $pdo, int $modelId, array $assetIds)
             'status' => $status,
             'start_datetime' => $startRaw,
             'end_datetime' => $endRaw,
-            'start_display' => layout_format_datetime($startRaw),
-            'end_display' => layout_format_datetime($endRaw),
+            'start_display' => app_format_datetime($startRaw),
+            'end_display' => app_format_datetime($endRaw),
             'quantity' => max(1, (int)($booking['quantity'] ?? 1)),
             'source' => $source,
         ];
@@ -707,10 +877,17 @@ $skipOverdueCheck = !$blockCatalogueOverdue;
 $activeUserEmail = trim($activeUser['email'] ?? '');
 $activeUserUsername = trim($activeUser['username'] ?? '');
 $activeUserDisplay = trim($activeUser['display_name'] ?? '');
+$activeUserName = trim(trim($activeUser['first_name'] ?? '') . ' ' . trim($activeUser['last_name'] ?? ''));
 $cacheKey = strtolower(trim($activeUserEmail !== '' ? $activeUserEmail : ($activeUserUsername !== '' ? $activeUserUsername : $activeUserDisplay)));
 if ($cacheKey === '') {
     $cacheKey = 'user_' . (int)($activeUser['id'] ?? 0);
 }
+$lookupSqlValues = build_sql_lookup_values(
+    $activeUserEmail,
+    $activeUserUsername,
+    $activeUserDisplay,
+    $activeUserName
+);
 $cacheBucket = $_SESSION['overdue_check_cache'] ?? [];
 $cached = is_array($cacheBucket) && isset($cacheBucket[$cacheKey]) ? $cacheBucket[$cacheKey] : null;
 if (!$skipOverdueCheck && is_array($cached) && isset($cached['ts'], $cached['data']) && $overdueCacheTtl > 0 && (time() - (int)$cached['ts']) <= $overdueCacheTtl) {
@@ -718,6 +895,34 @@ if (!$skipOverdueCheck && is_array($cached) && isset($cached['ts'], $cached['dat
     $catalogueBlocked = !empty($cachedData['blocked']);
     $overdueAssets = $cachedData['assets'] ?? [];
     $overdueErr = $cachedData['error'] ?? '';
+}
+if (!$skipOverdueCheck && !$catalogueBlocked && empty($overdueAssets)) {
+    try {
+        $inventoryUserId = 0;
+        $lookupQueries = array_values(array_filter(array_unique([
+            $activeUserEmail,
+            $activeUserUsername,
+            $activeUserDisplay,
+            $activeUserName,
+        ]), 'strlen'));
+
+        foreach ($lookupQueries as $query) {
+            try {
+                $matched = find_single_user_by_email_or_name($query);
+                $inventoryUserId = (int)($matched['id'] ?? 0);
+                if ($inventoryUserId > 0) {
+                    break;
+                }
+            } catch (Throwable $e) {
+                // Try next identifier.
+            }
+        }
+
+        $overdueAssets = fetch_overdue_assets_for_user($lookupSqlValues, $inventoryUserId);
+        $catalogueBlocked = !empty($overdueAssets);
+    } catch (Throwable $e) {
+        $overdueErr = $debugOn ? $e->getMessage() : 'Unable to check overdue items at the moment.';
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -743,6 +948,16 @@ if ($windowStartRaw === '' && $windowEndRaw === '') {
         $windowEndRaw   = $sessionEnd;
     }
 }
+if ($windowStartRaw === '' && $windowEndRaw === '') {
+    $windowTz = app_get_timezone($config);
+    $windowStartDt = $windowTz ? new DateTime('now', $windowTz) : new DateTime('now');
+    $windowEndDt = clone $windowStartDt;
+    $windowEndDt->modify('+1 day');
+    $windowEndDt->setTime(9, 0, 0);
+
+    $windowStartRaw = $windowStartDt->format('Y-m-d\TH:i');
+    $windowEndRaw   = $windowEndDt->format('Y-m-d\TH:i');
+}
 
 $windowStartTs = $windowStartRaw !== '' ? strtotime($windowStartRaw) : false;
 $windowEndTs   = $windowEndRaw !== '' ? strtotime($windowEndRaw) : false;
@@ -765,12 +980,53 @@ $perPage = defined('CATALOGUE_ITEMS_PER_PAGE')
     ? (int)CATALOGUE_ITEMS_PER_PAGE
     : 12;
 
-// ---------------------------------------------------------------------
-// Load categories
-// ---------------------------------------------------------------------
+// Deferred loading of categories/models happens after initial render flush.
 $categories   = [];
 $categoryErr  = '';
 $allowedCategoryMap = [];
+$allowedCategoryIds = [];
+$models      = [];
+$modelErr    = '';
+$totalModels = 0;
+$totalPages  = 1;
+$nowIso      = date('Y-m-d H:i:s');
+$windowStartIso = $windowActive ? date('Y-m-d H:i:s', $windowStartTs) : '';
+$windowEndIso   = $windowActive ? date('Y-m-d H:i:s', $windowEndTs) : '';
+$checkedOutCounts = [];
+?>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Catalogue – Book Equipment</title>
+
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="assets/style.css">
+    <?= layout_theme_styles() ?>
+</head>
+<body class="p-4"
+      data-catalogue-overdue="<?= $blockCatalogueOverdue ? '1' : '0' ?>"
+      data-date-format="<?= h(app_get_date_format()) ?>"
+      data-time-format="<?= h(app_get_time_format()) ?>">
+<div id="catalogue-loading" class="loading-overlay" aria-live="polite" aria-busy="true">
+    <div class="loading-card">
+        <div class="loading-spinner" aria-hidden="true"></div>
+        <div class="loading-text">Fetching assets...</div>
+    </div>
+</div>
+<?php
+@ini_set('output_buffering', 'off');
+@ini_set('zlib.output_compression', '0');
+if (function_exists('ob_flush')) {
+    @ob_flush();
+}
+@flush();
+
+// ---------------------------------------------------------------------
+// Load categories from local inventory (deferred so loader shows immediately)
+// ---------------------------------------------------------------------
 try {
     $categories = get_model_categories();
 } catch (Throwable $e) {
@@ -780,7 +1036,6 @@ try {
 
 // Optional admin-controlled allowlist for categories shown in the filter
 $allowedCfg = $config['catalogue']['allowed_categories'] ?? [];
-$allowedCategoryIds = [];
 if (is_array($allowedCfg)) {
     foreach ($allowedCfg as $cid) {
         if (ctype_digit((string)$cid) || is_int($cid)) {
@@ -792,24 +1047,10 @@ if (is_array($allowedCfg)) {
 }
 
 // ---------------------------------------------------------------------
-// Load models
+// Load models from local inventory (deferred so loader shows immediately)
 // ---------------------------------------------------------------------
-$models      = [];
-$modelErr    = '';
-$totalModels = 0;
-$totalPages  = 1;
-$nowIso      = date('Y-m-d H:i:s');
-$windowStartIso = $windowActive ? date('Y-m-d H:i:s', $windowStartTs) : '';
-$windowEndIso   = $windowActive ? date('Y-m-d H:i:s', $windowEndTs) : '';
-$checkedOutCounts = [];
-
-// If allowlist is set, ignore any pre-selected category that's not allowed
-if (!empty($allowedCategoryMap) && $category !== null && !isset($allowedCategoryMap[$category])) {
-    $category = null;
-}
-
 try {
-    $data = get_bookable_models($page, $search ?? '', $category, $sort, $perPage, $allowedCategoryIds, $windowActive);
+    $data = get_bookable_models($page, $search ?? '', $category, $sort, $perPage, $allowedCategoryIds);
 
     if (isset($data['rows']) && is_array($data['rows'])) {
         $models = $data['rows'];
@@ -850,7 +1091,7 @@ if (!empty($models)) {
     }
 }
 
-// Apply allowlist if configured; otherwise show all categories returned by the catalogue
+// Apply allowlist if configured; otherwise show all categories returned by local inventory
 if (!empty($allowedCategoryMap) && !empty($categories)) {
     $categories = array_values(array_filter($categories, function ($cat) use ($allowedCategoryMap) {
         $id = isset($cat['id']) ? (int)$cat['id'] : 0;
@@ -858,19 +1099,6 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
     }));
 }
 ?>
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Catalogue – Book Equipment</title>
-
-    <link rel="stylesheet"
-          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="assets/style.css">
-    <?= layout_theme_styles() ?>
-</head>
-<body class="p-4" data-catalogue-overdue="<?= $blockCatalogueOverdue ? '1' : '0' ?>">
 <div class="container">
     <div class="page-shell">
         <?= layout_logo_tag() ?>
@@ -898,16 +1126,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                 (<?= htmlspecialchars($currentUser['email']) ?>)
             </div>
             <div class="top-bar-actions d-flex gap-2">
-                <?php
-                    $basketUrl = 'basket.php';
-                    if ($windowActive) {
-                        $basketUrl .= '?' . http_build_query([
-                            'start_datetime' => $windowStartRaw,
-                            'end_datetime'   => $windowEndRaw,
-                        ]);
-                    }
-                ?>
-                <a href="<?= h($basketUrl) ?>"
+                <a href="basket.php"
                    class="btn btn-lg btn-primary fw-semibold shadow-sm px-4"
                    style="font-size:16px;"
                    id="view-basket-btn">
@@ -917,43 +1136,6 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
             </div>
         </div>
 
-        <?php if ($blockCatalogueOverdue): ?>
-            <div id="overdue-alert" class="alert alert-danger<?= $catalogueBlocked ? '' : ' d-none' ?>">
-                <div class="fw-semibold mb-2">Catalogue unavailable</div>
-                <div class="mb-2">
-                    You have overdue items. Please return them before booking more equipment.
-                </div>
-                <ul class="mb-0" id="overdue-list">
-                    <?php foreach ($overdueAssets as $asset): ?>
-                        <?php
-                            $tag = $asset['tag'] ?? 'Unknown tag';
-                            $modelName = $asset['model'] ?? '';
-                            $due = $asset['due'] ?? '';
-                        ?>
-                        <li>
-                            <?= h($tag) ?>
-                            <?= $modelName !== '' ? ' (' . h($modelName) . ')' : '' ?>
-                            <?= $due !== '' ? ' — due ' . h($due) : '' ?>
-                        </li>
-                    <?php endforeach; ?>
-                </ul>
-            </div>
-        <?php endif; ?>
-
-        <div id="catalogue-content" class="<?= $catalogueBlocked ? 'd-none' : '' ?>">
-            <?php if ($categoryErr): ?>
-                <div class="alert alert-warning">
-                    Could not load categories: <?= htmlspecialchars($categoryErr) ?>
-                </div>
-            <?php endif; ?>
-
-            <?php if ($modelErr): ?>
-                <div class="alert alert-danger">
-                    Error loading models: <?= htmlspecialchars($modelErr) ?>
-                </div>
-            <?php endif; ?>
-
-        <!-- Filters -->
         <?php if ($isStaff): ?>
             <div class="alert alert-info d-flex flex-column flex-md-row align-items-md-center justify-content-md-between booking-for-alert">
                 <div class="mb-2 mb-md-0">
@@ -983,6 +1165,44 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
             </div>
         <?php endif; ?>
 
+        <?php if ($blockCatalogueOverdue): ?>
+            <div id="overdue-alert" class="alert alert-danger<?= $catalogueBlocked ? '' : ' d-none' ?>">
+                <div class="fw-semibold mb-2">Catalogue unavailable</div>
+                <div class="mb-2">
+                    You have overdue items. Please return them before booking more equipment.
+                </div>
+                <ul class="mb-0" id="overdue-list">
+                    <?php foreach ($overdueAssets as $asset): ?>
+                        <?php
+                            $tag = $asset['tag'] ?? 'Unknown tag';
+                            $modelName = $asset['model'] ?? '';
+                            $due = $asset['due'] ?? '';
+                        ?>
+                        <li>
+                            <?= h($tag) ?>
+                            <?= $modelName !== '' ? ' (' . h($modelName) . ')' : '' ?>
+                            <?= $due !== '' ? ' — due ' . h($due) : '' ?>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        <?php endif; ?>
+
+        <div id="catalogue-content" class="<?= $catalogueBlocked ? 'd-none' : '' ?>">
+            <?php if ($categoryErr): ?>
+                <div class="alert alert-warning">
+                    Could not load categories from local inventory: <?= htmlspecialchars($categoryErr) ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($modelErr): ?>
+                <div class="alert alert-danger">
+                    Error talking to local inventory (models): <?= htmlspecialchars($modelErr) ?>
+                </div>
+            <?php endif; ?>
+
+        <!-- Filters -->
+
         <form class="filter-panel mb-4" method="get" action="catalogue.php" id="catalogue-filter-form">
             <div class="filter-panel__header d-flex align-items-center gap-3">
                 <span class="filter-panel__dot"></span>
@@ -991,6 +1211,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
 
             <input type="hidden" name="start_datetime" value="<?= h($windowStartRaw) ?>">
             <input type="hidden" name="end_datetime" value="<?= h($windowEndRaw) ?>">
+            <input type="hidden" name="prefetch" value="1">
 
             <div class="row g-3 align-items-end">
                 <div class="col-12 col-lg-5">
@@ -1054,8 +1275,9 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
             <input type="hidden" name="q" value="<?= h($searchRaw) ?>">
             <input type="hidden" name="category" value="<?= h($categoryRaw) ?>">
             <input type="hidden" name="sort" value="<?= h($sortRaw) ?>">
+            <input type="hidden" name="prefetch" value="1">
             <div class="row g-3 align-items-end">
-                <div class="col-md-4">
+                <div class="col-md-5">
                     <label class="form-label fw-semibold">Start date &amp; time</label>
                     <input type="datetime-local"
                            name="start_datetime"
@@ -1063,7 +1285,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                            class="form-control form-control-lg"
                            value="<?= h($windowStartRaw) ?>">
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-5">
                     <label class="form-label fw-semibold">End date &amp; time</label>
                     <input type="datetime-local"
                            name="end_datetime"
@@ -1071,12 +1293,9 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                            class="form-control form-control-lg"
                            value="<?= h($windowEndRaw) ?>">
                 </div>
-                <div class="col-md-4 d-grid d-md-flex gap-2">
-                    <button class="btn btn-primary btn-lg w-100 flex-md-fill mt-3 mt-md-0 reservation-window-btn" type="button" id="catalogue-today-btn">
+                <div class="col-12 col-md-2 d-grid mb-2 mb-md-0">
+                    <button class="btn btn-primary btn-lg" type="button" id="catalogue-today-btn">
                         Today
-                    </button>
-                    <button class="btn btn-primary btn-lg w-100 flex-md-fill mt-3 mt-md-0 reservation-window-btn" type="submit">
-                        Update availability
                     </button>
                 </div>
             </div>
@@ -1103,9 +1322,9 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                     $assetCount = null;
                     $freeNow     = 0;
                     $maxQty      = 0;
-                    $hasStock = false;
+                    $isRequestable = false;
                     try {
-                        $assetCount = count_assets_by_model($modelId);
+                        $assetCount = count_requestable_assets_by_model($modelId);
 
                         if ($windowActive) {
                             $stmt = $pdo->prepare("
@@ -1154,19 +1373,22 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                         $booked = $pendingQty + $activeCheckedOut;
                         $freeNow = max(0, $assetCount - $booked);
                         $maxQty = $freeNow;
-                        $hasStock = $assetCount > 0;
+                        $isRequestable = $assetCount > 0;
                     } catch (Throwable $e) {
                         $assetCount = $assetCount ?? 0;
                         $freeNow    = 0;
                         $maxQty     = 0;
-                        $hasStock = $assetCount > 0;
+                        $isRequestable = $assetCount > 0;
                     }
                     $notes      = $model['notes'] ?? '';
                     if (is_array($notes)) {
                         $notes = $notes['text'] ?? '';
                     }
 
-                    $imageUrl = $imagePath !== '' ? $imagePath : '';
+                    $proxiedImage = '';
+                    if ($imagePath !== '') {
+                        $proxiedImage = 'image_proxy.php?src=' . urlencode($imagePath);
+                    }
                     ?>
                     <div class="col-md-4">
                         <div class="card h-100 model-card model-card--details"
@@ -1175,9 +1397,9 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                              role="button"
                              tabindex="0"
                              aria-label="Open notes and bookings for <?= h($name) ?>">
-                            <?php if ($imageUrl !== ''): ?>
+                            <?php if ($proxiedImage !== ''): ?>
                                 <div class="model-image-wrapper">
-                                    <img src="<?= htmlspecialchars($imageUrl) ?>"
+                                    <img src="<?= htmlspecialchars($proxiedImage) ?>"
                                          alt=""
                                          class="model-image img-fluid">
                                 </div>
@@ -1201,7 +1423,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                                         <span><strong>Category:</strong> <?= label_safe($catName) ?></span><br>
                                     <?php endif; ?>
                                     <?php if ($assetCount !== null): ?>
-                                        <span><strong>Total units:</strong> <?= $assetCount ?></span><br>
+                                        <span><strong>Requestable units:</strong> <?= $assetCount ?></span><br>
                                     <?php endif; ?>
                                     <span><strong><?= $windowActive ? 'Available for selected dates:' : 'Available now:' ?></strong> <?= $freeNow ?></span>
                                     <?php if (!empty($notes)): ?>
@@ -1220,7 +1442,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                                         <input type="hidden" name="end_datetime" value="<?= h($windowEndRaw) ?>">
                                     <?php endif; ?>
 
-                                    <?php if ($hasStock && $freeNow > 0): ?>
+                                    <?php if ($isRequestable && $freeNow > 0): ?>
                                         <div class="row g-2 align-items-center mb-2">
                                             <div class="col-6">
                                                 <label class="form-label mb-0 small">Quantity</label>
@@ -1239,8 +1461,8 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                                         </button>
                                     <?php else: ?>
                                         <div class="alert alert-secondary small mb-0">
-                                            <?php if (!$hasStock): ?>
-                                                No units available.
+                                            <?php if (!$isRequestable): ?>
+                                                No requestable units available.
                                             <?php else: ?>
                                                 <?= $windowActive ? 'No units available for selected dates.' : 'No units available right now.' ?>
                                             <?php endif; ?>
@@ -1269,6 +1491,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                             'sort'     => $sortRaw,
                             'start_datetime' => $windowStartRaw,
                             'end_datetime' => $windowEndRaw,
+                            'prefetch' => 1,
                         ];
                         ?>
                         <?php for ($p = 1; $p <= $totalPages; $p++): ?>
@@ -1292,6 +1515,41 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
      role="status"
      aria-live="polite"
      aria-hidden="true"></div>
+
+<?php if (!empty($catalogueAnnouncements)): ?>
+<div id="catalogue-announcement-modal"
+     class="catalogue-modal catalogue-modal--announcement"
+     role="dialog"
+     aria-modal="true"
+     aria-hidden="true"
+     aria-labelledby="catalogue-announcement-title"
+     hidden>
+    <div class="catalogue-modal__backdrop" data-announcement-close></div>
+    <div class="catalogue-modal__dialog" role="document">
+        <div class="catalogue-modal__header">
+            <h2 id="catalogue-announcement-title" class="catalogue-modal__title">
+                <?= count($catalogueAnnouncements) > 1 ? 'Announcements' : 'Announcement' ?>
+            </h2>
+            <button type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    data-announcement-close>
+                Dismiss
+            </button>
+        </div>
+        <div class="catalogue-modal__body">
+            <?php if (count($catalogueAnnouncements) === 1): ?>
+                <div class="announcement-modal__message"><?= nl2br(h((string)$catalogueAnnouncements[0]['message'])) ?></div>
+            <?php else: ?>
+                <ol class="announcement-modal__list">
+                    <?php foreach ($catalogueAnnouncements as $announcement): ?>
+                        <li class="announcement-modal__list-item"><?= nl2br(h((string)$announcement['message'])) ?></li>
+                    <?php endforeach; ?>
+                </ol>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <div id="model-details-modal"
      class="catalogue-modal"
@@ -1366,6 +1624,11 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
 <!-- AJAX add-to-basket + update basket count text -->
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    const loadingOverlay = document.getElementById('catalogue-loading');
+    if (loadingOverlay) {
+        loadingOverlay.classList.add('is-hidden');
+        loadingOverlay.setAttribute('aria-busy', 'false');
+    }
     const overdueAlert = document.getElementById('overdue-alert');
     const overdueList = document.getElementById('overdue-list');
     const overdueWarning = document.getElementById('overdue-warning');
@@ -1384,7 +1647,15 @@ document.addEventListener('DOMContentLoaded', function () {
     const windowEndInput = document.getElementById('catalogue_end_datetime');
     const windowForm = document.getElementById('catalogue-window-form');
     const todayBtn = document.getElementById('catalogue-today-btn');
+    const windowScrollRestoreKey = 'kitgrab:catalogueWindowScrollY';
+    let windowSubmitInFlight = false;
+    let lastSubmittedWindow = (windowStartInput && windowEndInput)
+        ? (windowStartInput.value.trim() + '|' + windowEndInput.value.trim())
+        : '';
+    let nativeWindowDirty = false;
+    let nativeWindowBlurTimer = null;
     const modelDetailCards = document.querySelectorAll('.model-card--details');
+    const announcementModal = document.getElementById('catalogue-announcement-modal');
     const modelDetailsModal = document.getElementById('model-details-modal');
     const modelDetailsDialog = modelDetailsModal ? modelDetailsModal.querySelector('.catalogue-modal__dialog') : null;
     const modelDetailsTitle = document.getElementById('model-details-title');
@@ -1403,8 +1674,166 @@ document.addEventListener('DOMContentLoaded', function () {
     let modelBookings = [];
     let modelDetailsRequestId = 0;
     let modelModalOpen = false;
+    let announcementModalOpen = false;
     let modelModalOpenAnimation = null;
+    let announcementModalLastFocused = null;
     let modalLastFocusedElement = null;
+
+    function syncModalBodyState() {
+        const hasOpenModal = modelModalOpen || announcementModalOpen;
+        document.body.classList.toggle('catalogue-modal-open', hasOpenModal);
+    }
+
+    function showLoadingOverlay() {
+        if (!loadingOverlay) return;
+        loadingOverlay.classList.remove('is-hidden');
+        loadingOverlay.setAttribute('aria-busy', 'true');
+    }
+
+    function saveWindowScrollPosition() {
+        try {
+            const y = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
+            window.sessionStorage.setItem(windowScrollRestoreKey, String(y));
+        } catch (e) {
+            // Ignore storage errors (private mode / blocked storage).
+        }
+    }
+
+    function restoreWindowScrollPosition() {
+        try {
+            const raw = window.sessionStorage.getItem(windowScrollRestoreKey);
+            if (raw === null) return;
+            window.sessionStorage.removeItem(windowScrollRestoreKey);
+            const target = parseInt(raw, 10);
+            if (!Number.isFinite(target)) return;
+
+            const scrollToSavedY = function () {
+                const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+                const maxY = Math.max(0, document.documentElement.scrollHeight - Math.max(1, viewportHeight));
+                const nextY = Math.max(0, Math.min(maxY, target));
+                window.scrollTo(0, nextY);
+            };
+
+            window.requestAnimationFrame(function () {
+                scrollToSavedY();
+                window.setTimeout(scrollToSavedY, 120);
+            });
+        } catch (e) {
+            // Ignore storage errors (private mode / blocked storage).
+        }
+    }
+
+    restoreWindowScrollPosition();
+
+    function closeAnnouncementModal() {
+        if (!announcementModal || !announcementModalOpen) return;
+        announcementModalOpen = false;
+        announcementModal.classList.remove('is-open');
+        announcementModal.hidden = true;
+        announcementModal.setAttribute('aria-hidden', 'true');
+        syncModalBodyState();
+        if (announcementModalLastFocused && typeof announcementModalLastFocused.focus === 'function') {
+            announcementModalLastFocused.focus();
+        }
+        announcementModalLastFocused = null;
+    }
+
+    function openAnnouncementModal() {
+        if (!announcementModal || announcementModalOpen) return;
+        announcementModalLastFocused = document.activeElement;
+        announcementModalOpen = true;
+        announcementModal.hidden = false;
+        announcementModal.setAttribute('aria-hidden', 'false');
+        syncModalBodyState();
+        window.requestAnimationFrame(function () {
+            if (!announcementModal || !announcementModalOpen) return;
+            announcementModal.classList.add('is-open');
+        });
+    }
+
+    function maybeSubmitWindow() {
+        if (windowSubmitInFlight || !windowForm || !windowStartInput || !windowEndInput) return;
+        const startVal = windowStartInput.value.trim();
+        const endVal = windowEndInput.value.trim();
+        if (startVal === '' && endVal === '') return;
+        if (startVal === '' || endVal === '') return;
+        const startMs = Date.parse(startVal);
+        const endMs = Date.parse(endVal);
+        if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs <= startMs) return;
+        const windowKey = startVal + '|' + endVal;
+        if (windowKey === lastSubmittedWindow) return;
+        lastSubmittedWindow = windowKey;
+        windowSubmitInFlight = true;
+        saveWindowScrollPosition();
+        showLoadingOverlay();
+        windowForm.submit();
+    }
+
+    function isNativeWindowMode() {
+        return !!(windowStartInput && windowEndInput && !windowStartInput._flatpickr && !windowEndInput._flatpickr);
+    }
+
+    function maybeSubmitNativeWindowOnBlur() {
+        if (!isNativeWindowMode() || !nativeWindowDirty) return;
+        if (nativeWindowBlurTimer) {
+            clearTimeout(nativeWindowBlurTimer);
+        }
+        nativeWindowBlurTimer = window.setTimeout(function () {
+            const activeElement = document.activeElement;
+            if (activeElement === windowStartInput || activeElement === windowEndInput) {
+                return;
+            }
+            nativeWindowDirty = false;
+            maybeSubmitWindow();
+        }, 120);
+    }
+
+    function toLocalDatetimeValue(date) {
+        const pad = function (n) { return String(n).padStart(2, '0'); };
+        return date.getFullYear()
+            + '-' + pad(date.getMonth() + 1)
+            + '-' + pad(date.getDate())
+            + 'T' + pad(date.getHours())
+            + ':' + pad(date.getMinutes());
+    }
+
+    function setDatetimeInputValue(input, value) {
+        if (!input) return;
+        if (input._flatpickr) {
+            input._flatpickr.setDate(value, true, input._flatpickr.config.dateFormat);
+            return;
+        }
+        input.value = value;
+    }
+
+    function setTodayWindow() {
+        if (!windowStartInput || !windowEndInput) return;
+        const now = new Date();
+        const tomorrow = new Date(now);
+        tomorrow.setDate(now.getDate() + 1);
+        tomorrow.setHours(9, 0, 0, 0);
+        setDatetimeInputValue(windowStartInput, toLocalDatetimeValue(now));
+        setDatetimeInputValue(windowEndInput, toLocalDatetimeValue(tomorrow));
+        showLoadingOverlay();
+        maybeSubmitWindow();
+    }
+
+    function normalizeWindowEnd() {
+        if (!windowStartInput || !windowEndInput) return;
+        const startVal = windowStartInput.value.trim();
+        const endVal = windowEndInput.value.trim();
+        if (startVal === '' || endVal === '') return;
+        const startMs = Date.parse(startVal);
+        const endMs = Date.parse(endVal);
+        if (Number.isNaN(startMs) || Number.isNaN(endMs)) return;
+        if (endMs <= startMs) {
+            const startDate = new Date(startMs);
+            const nextDay = new Date(startDate);
+            nextDay.setDate(startDate.getDate() + 1);
+            nextDay.setHours(9, 0, 0, 0);
+            setDatetimeInputValue(windowEndInput, toLocalDatetimeValue(nextDay));
+        }
+    }
 
     function applyOverdueBlock(items) {
         if (catalogueContent) {
@@ -1794,7 +2223,7 @@ document.addEventListener('DOMContentLoaded', function () {
         modelDetailsModal.classList.remove('is-open');
         modelDetailsModal.hidden = true;
         modelDetailsModal.setAttribute('aria-hidden', 'true');
-        document.body.classList.remove('catalogue-modal-open');
+        syncModalBodyState();
         setModelFeedback('', 'info');
 
         if (modalLastFocusedElement && typeof modalLastFocusedElement.focus === 'function') {
@@ -1811,7 +2240,7 @@ document.addEventListener('DOMContentLoaded', function () {
         modelDetailsModal.classList.remove('is-open');
         modelDetailsModal.hidden = false;
         modelDetailsModal.setAttribute('aria-hidden', 'false');
-        document.body.classList.add('catalogue-modal-open');
+        syncModalBodyState();
         window.requestAnimationFrame(function () {
             if (!modelModalOpen || !modelDetailsModal) {
                 return;
@@ -1912,54 +2341,91 @@ document.addEventListener('DOMContentLoaded', function () {
         return Boolean(target.closest('.add-to-basket-form, button, input, select, textarea, a, label'));
     }
 
-    function maybeSubmitWindow() {
-        if (!windowForm || !windowStartInput || !windowEndInput) return;
-        const startVal = windowStartInput.value.trim();
-        const endVal = windowEndInput.value.trim();
-        if (startVal === '' && endVal === '') return;
-        if (startVal === '' || endVal === '') return;
-        const startMs = Date.parse(startVal);
-        const endMs = Date.parse(endVal);
-        if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs <= startMs) return;
-        windowForm.submit();
+    if (filterForm) {
+        filterForm.addEventListener('submit', function () {
+            showLoadingOverlay();
+        });
     }
 
-    function toLocalDatetimeValue(date) {
-        const pad = function (n) { return String(n).padStart(2, '0'); };
-        return date.getFullYear()
-            + '-' + pad(date.getMonth() + 1)
-            + '-' + pad(date.getDate())
-            + 'T' + pad(date.getHours())
-            + ':' + pad(date.getMinutes());
+    if (categorySelect) {
+        categorySelect.addEventListener('change', function () {
+            showLoadingOverlay();
+            filterForm.submit();
+        });
     }
 
-    function setTodayWindow() {
+    if (sortSelect) {
+        sortSelect.addEventListener('change', function () {
+            showLoadingOverlay();
+            filterForm.submit();
+        });
+    }
+
+    const searchInput = filterForm ? filterForm.querySelector('input[name="q"]') : null;
+    if (searchInput) {
+        searchInput.addEventListener('blur', function () {
+            if (!filterForm) return;
+            const value = searchInput.value.trim();
+            if (value === '' && searchInput.defaultValue.trim() === '') {
+                return;
+            }
+            showLoadingOverlay();
+            filterForm.submit();
+        });
+    }
+
+    if (windowStartInput && windowEndInput) {
+        windowStartInput.addEventListener('change', function () {
+            normalizeWindowEnd();
+            if (isNativeWindowMode()) {
+                nativeWindowDirty = true;
+                maybeSubmitNativeWindowOnBlur();
+            }
+        });
+        windowEndInput.addEventListener('change', function () {
+            normalizeWindowEnd();
+            if (isNativeWindowMode()) {
+                nativeWindowDirty = true;
+                maybeSubmitNativeWindowOnBlur();
+            }
+        });
+        windowStartInput.addEventListener('blur', maybeSubmitNativeWindowOnBlur);
+        windowEndInput.addEventListener('blur', maybeSubmitNativeWindowOnBlur);
+    }
+    if (windowForm) {
+        windowForm.addEventListener('submit', () => {
+            normalizeWindowEnd();
+            if (windowStartInput && windowEndInput) {
+                lastSubmittedWindow = windowStartInput.value.trim() + '|' + windowEndInput.value.trim();
+            }
+            windowSubmitInFlight = true;
+            saveWindowScrollPosition();
+            showLoadingOverlay();
+        });
+    }
+    if (todayBtn) {
+        todayBtn.addEventListener('click', setTodayWindow);
+    }
+    document.addEventListener('click', function (event) {
         if (!windowStartInput || !windowEndInput) return;
-        const now = new Date();
-        const tomorrow = new Date(now);
-        tomorrow.setDate(now.getDate() + 1);
-        tomorrow.setHours(9, 0, 0, 0);
-        windowStartInput.value = toLocalDatetimeValue(now);
-        windowEndInput.value = toLocalDatetimeValue(tomorrow);
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) return;
+        const confirmButton = target.closest('.flatpickr-confirm');
+        if (!confirmButton) return;
+        const calendar = confirmButton.closest('.flatpickr-calendar');
+        if (!calendar) return;
+
+        const startCalendar = windowStartInput._flatpickr
+            ? windowStartInput._flatpickr.calendarContainer
+            : null;
+        const endCalendar = windowEndInput._flatpickr
+            ? windowEndInput._flatpickr.calendarContainer
+            : null;
+        if (calendar !== startCalendar && calendar !== endCalendar) return;
+
+        normalizeWindowEnd();
         maybeSubmitWindow();
-    }
-
-    function normalizeWindowEnd() {
-        if (!windowStartInput || !windowEndInput) return;
-        const startVal = windowStartInput.value.trim();
-        const endVal = windowEndInput.value.trim();
-        if (startVal === '' || endVal === '') return;
-        const startMs = Date.parse(startVal);
-        const endMs = Date.parse(endVal);
-        if (Number.isNaN(startMs) || Number.isNaN(endMs)) return;
-        if (endMs <= startMs) {
-            const startDate = new Date(startMs);
-            const nextDay = new Date(startDate);
-            nextDay.setDate(startDate.getDate() + 1);
-            nextDay.setHours(9, 0, 0, 0);
-            windowEndInput.value = toLocalDatetimeValue(nextDay);
-        }
-    }
+    });
 
     const overdueEnabled = document.body.dataset.catalogueOverdue === '1';
     if (overdueEnabled) {
@@ -2021,9 +2487,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                 })
                 .catch(function () {
-                    // Fallback: if AJAX fails for any reason, do normal form submit
-                    form.submit();
-                });
+                // Fallback: if AJAX fails for any reason, do normal form submit
+                form.submit();
+            });
         });
     });
 
@@ -2088,30 +2554,6 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    if (filterForm && categorySelect) {
-        categorySelect.addEventListener('change', function () {
-            filterForm.submit();
-        });
-    }
-
-    if (filterForm && sortSelect) {
-        sortSelect.addEventListener('change', function () {
-            filterForm.submit();
-        });
-    }
-
-    if (windowStartInput && windowEndInput) {
-        windowStartInput.addEventListener('change', normalizeWindowEnd);
-        windowEndInput.addEventListener('change', normalizeWindowEnd);
-        windowStartInput.addEventListener('change', maybeSubmitWindow);
-        windowEndInput.addEventListener('change', maybeSubmitWindow);
-        windowStartInput.addEventListener('blur', maybeSubmitWindow);
-        windowEndInput.addEventListener('blur', maybeSubmitWindow);
-    }
-    if (todayBtn) {
-        todayBtn.addEventListener('click', setTodayWindow);
-    }
-
     if (modelCalendarPrev) {
         modelCalendarPrev.addEventListener('click', function () {
             modelCalendarMonthCursor = new Date(
@@ -2136,6 +2578,16 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    if (announcementModal) {
+        announcementModal.addEventListener('click', function (event) {
+            const target = event.target;
+            if (target && target.closest && target.closest('[data-announcement-close]')) {
+                closeAnnouncementModal();
+            }
+        });
+        openAnnouncementModal();
+    }
+
     if (modelDetailsModal) {
         modelDetailsModal.addEventListener('click', function (event) {
             const target = event.target;
@@ -2146,9 +2598,17 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     document.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape' && modelModalOpen) {
+        if (event.key !== 'Escape') {
+            return;
+        }
+        if (modelModalOpen) {
             event.preventDefault();
             closeModelDetailsModal();
+            return;
+        }
+        if (announcementModalOpen) {
+            event.preventDefault();
+            closeAnnouncementModal();
         }
     });
 

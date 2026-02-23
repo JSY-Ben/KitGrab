@@ -28,87 +28,34 @@ if (!function_exists('layout_cached_config')) {
     }
 }
 
+// Backward-compatible wrappers retained for pages that still call legacy
+// layout_* date formatting helpers.
 if (!function_exists('layout_date_format')) {
     function layout_date_format(?array $cfg = null): string
     {
-        $config = layout_cached_config($cfg);
-        $format = trim((string)($config['app']['date_format'] ?? 'd/m/Y'));
-        $allowed = ['d/m/Y', 'm/d/Y', 'Y-m-d', 'd-m-Y', 'd.m.Y'];
-        return in_array($format, $allowed, true) ? $format : 'd/m/Y';
+        return app_get_date_format($cfg ?? layout_cached_config());
     }
 }
 
 if (!function_exists('layout_time_format')) {
     function layout_time_format(?array $cfg = null): string
     {
-        $config = layout_cached_config($cfg);
-        $format = strtolower(trim((string)($config['app']['time_format'] ?? '24h')));
-        return $format === '12h' ? '12h' : '24h';
+        $format = app_get_time_format($cfg ?? layout_cached_config());
+        return (strpos($format, 'h') !== false || strpos($format, 'g') !== false) ? '12h' : '24h';
     }
 }
 
 if (!function_exists('layout_format_date')) {
     function layout_format_date($value, ?array $cfg = null): string
     {
-        if (is_array($value)) {
-            $value = $value['date'] ?? ($value['datetime'] ?? '');
-        }
-        $value = trim((string)$value);
-        if ($value === '') {
-            return '';
-        }
-        $config = layout_cached_config($cfg);
-        $tzName = trim((string)($config['app']['timezone'] ?? ''));
-        $tz = null;
-        if ($tzName !== '') {
-            try {
-                $tz = new DateTimeZone($tzName);
-            } catch (Throwable $e) {
-                $tz = null;
-            }
-        }
-        try {
-            $dt = new DateTime($value, $tz ?: null);
-            if ($tz) {
-                $dt->setTimezone($tz);
-            }
-            return $dt->format(layout_date_format($config));
-        } catch (Throwable $e) {
-            return $value;
-        }
+        return app_format_date($value, $cfg ?? layout_cached_config());
     }
 }
 
 if (!function_exists('layout_format_datetime')) {
     function layout_format_datetime($value, ?array $cfg = null): string
     {
-        if (is_array($value)) {
-            $value = $value['datetime'] ?? ($value['date'] ?? '');
-        }
-        $value = trim((string)$value);
-        if ($value === '') {
-            return '';
-        }
-        $config = layout_cached_config($cfg);
-        $tzName = trim((string)($config['app']['timezone'] ?? ''));
-        $tz = null;
-        if ($tzName !== '') {
-            try {
-                $tz = new DateTimeZone($tzName);
-            } catch (Throwable $e) {
-                $tz = null;
-            }
-        }
-        try {
-            $dt = new DateTime($value, $tz ?: null);
-            if ($tz) {
-                $dt->setTimezone($tz);
-            }
-            $timeFormat = layout_time_format($config) === '12h' ? 'h:i A' : 'H:i';
-            return $dt->format(layout_date_format($config) . ' ' . $timeFormat);
-        } catch (Throwable $e) {
-            return $value;
-        }
+        return app_format_datetime($value, $cfg ?? layout_cached_config());
     }
 }
 
@@ -194,7 +141,9 @@ if (!function_exists('layout_theme_styles')) {
         [$rs, $gs, $bs]       = layout_color_to_rgb($primaryStrong);
         [$rl, $gl, $bl]       = layout_color_to_rgb($primarySoft);
 
-        $style = <<<CSS
+        $style = '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">' . "\n"
+            . '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/plugins/confirmDate/confirmDate.css">' . "\n"
+            . <<<CSS
 <style>
 :root {
     --primary: {$primary};
@@ -205,6 +154,61 @@ if (!function_exists('layout_theme_styles')) {
     --primary-soft-rgb: {$rl}, {$gl}, {$bl};
     --accent: var(--primary-strong);
     --accent-2: var(--primary-soft);
+}
+
+.flatpickr-day.selected,
+.flatpickr-day.startRange,
+.flatpickr-day.endRange,
+.flatpickr-day.selected.inRange,
+.flatpickr-day.startRange.inRange,
+.flatpickr-day.endRange.inRange,
+.flatpickr-day.selected:hover,
+.flatpickr-day.startRange:hover,
+.flatpickr-day.endRange:hover,
+.flatpickr-day.selected:focus,
+.flatpickr-day.startRange:focus,
+.flatpickr-day.endRange:focus {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.flatpickr-day.today {
+    border-color: var(--primary);
+}
+
+.flatpickr-day.today:hover,
+.flatpickr-day.today:focus {
+    background: var(--primary-soft);
+    border-color: var(--primary-soft);
+}
+
+.flatpickr-months .flatpickr-prev-month:hover svg,
+.flatpickr-months .flatpickr-next-month:hover svg {
+    fill: var(--primary);
+}
+
+.flatpickr-time input:hover,
+.flatpickr-time .flatpickr-am-pm:hover,
+.flatpickr-time input:focus,
+.flatpickr-time .flatpickr-am-pm:focus {
+    background: rgba(var(--primary-rgb), 0.12);
+}
+
+.flatpickr-calendar .flatpickr-confirm {
+    background: var(--primary) !important;
+    border-color: var(--primary) !important;
+    color: #fff !important;
+}
+
+.flatpickr-calendar .flatpickr-confirm:hover,
+.flatpickr-calendar .flatpickr-confirm:focus {
+    background: var(--primary-strong) !important;
+    border-color: var(--primary-strong) !important;
+    color: #fff !important;
+}
+
+.flatpickr-calendar .flatpickr-confirm svg {
+    fill: currentColor;
 }
 </style>
 CSS;
@@ -258,11 +262,255 @@ if (!function_exists('layout_footer')) {
         $versionRaw  = is_file($versionFile) ? trim((string)@file_get_contents($versionFile)) : '';
         $version     = $versionRaw !== '' ? $versionRaw : 'dev';
         $versionEsc  = htmlspecialchars($version, ENT_QUOTES, 'UTF-8');
-        $cfg = layout_cached_config();
-        $appName = $cfg['app']['name'] ?? 'KitGrab';
-        $appNameEsc = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
+        $flatpickrCfg = app_flatpickr_settings(layout_cached_config());
+        $flatpickrCfgJson = json_encode($flatpickrCfg, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
 
         echo '<script src="assets/nav.js"></script>';
+        echo '<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>';
+        echo '<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/plugins/confirmDate/confirmDate.js"></script>';
+        echo '<script>window.KitGrabFlatpickr=' . ($flatpickrCfgJson ?: '{}') . ';</script>';
+        echo <<<SCRIPT
+<script>
+(function () {
+    const boot = () => {
+        if (typeof window.flatpickr !== 'function') return;
+        const cfg = window.KitGrabFlatpickr || {};
+
+        const normalizeFormats = (formats) => {
+            const unique = [];
+            formats.forEach((fmt) => {
+                const v = String(fmt || '').trim();
+                if (!v || unique.indexOf(v) !== -1) return;
+                unique.push(v);
+            });
+            return unique;
+        };
+
+        const fallbackFormats = {
+            date: normalizeFormats([
+                cfg.machine_date_format,
+                cfg.alt_date_format,
+                'Y-m-d',
+            ]),
+            datetime: normalizeFormats([
+                cfg.machine_datetime_format,
+                cfg.alt_datetime_format,
+                'Y-m-d\\TH:i:S',
+                'Y-m-d\\TH:i',
+                'Y-m-d H:i:S',
+                'Y-m-d H:i',
+            ]),
+            time: normalizeFormats([
+                cfg.machine_time_format,
+                cfg.alt_time_format,
+                'H:i:S',
+                'H:i',
+                'h:i:S K',
+                'h:i K',
+            ]),
+        };
+
+        const detectPickerType = (input) => {
+            const explicit = String(input.getAttribute('data-flatpickr') || '').toLowerCase().trim();
+            if (explicit === 'date' || explicit === 'time' || explicit === 'datetime') {
+                return explicit;
+            }
+
+            const inputType = String(input.getAttribute('type') || '').toLowerCase().trim();
+            if (inputType === 'date') return 'date';
+            if (inputType === 'time') return 'time';
+            if (inputType === 'datetime-local') return 'datetime';
+            return '';
+        };
+
+        const isMobilePickerMode = () => {
+            const hasMatchMedia = typeof window.matchMedia === 'function';
+            const narrowViewport = hasMatchMedia && window.matchMedia('(max-width: 768px)').matches;
+            const coarsePointer = hasMatchMedia && window.matchMedia('(pointer: coarse)').matches;
+            return narrowViewport || coarsePointer;
+        };
+
+        const parseDateFactory = (formats) => (raw, formatHint) => {
+            const value = String(raw || '').trim();
+            if (!value) return undefined;
+
+            const parseFormats = normalizeFormats([formatHint].concat(formats || []));
+            for (let i = 0; i < parseFormats.length; i += 1) {
+                const parsed = window.flatpickr.parseDate(value, parseFormats[i]);
+                if (parsed instanceof Date && !Number.isNaN(parsed.getTime())) {
+                    return parsed;
+                }
+            }
+
+            // Only allow native parsing for strict ISO-like values to avoid
+            // locale-dependent reinterpretation on blur/close.
+            if (/^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?$/.test(value)) {
+                const timestamp = Date.parse(value.replace(' ', 'T'));
+                if (!Number.isNaN(timestamp)) {
+                    return new Date(timestamp);
+                }
+            }
+
+            return undefined;
+        };
+
+        const centerOpenCalendar = (_selectedDates, _dateStr, instance) => {
+            if (!instance || !instance.calendarContainer) return;
+
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+            if (viewportHeight <= 0) return;
+
+            const calendar = instance.calendarContainer;
+            const topPadding = 16;
+            const bottomPadding = 16;
+            const availableHeight = Math.max(1, viewportHeight - topPadding - bottomPadding);
+
+            const scrollCalendarIntoView = () => {
+                const rect = calendar.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) return;
+
+                let targetTop = topPadding;
+                if (rect.height < availableHeight) {
+                    targetTop = topPadding + ((availableHeight - rect.height) / 2);
+                }
+
+                const desiredY = window.scrollY + (rect.top - targetTop);
+                const maxScrollY = Math.max(0, document.documentElement.scrollHeight - viewportHeight);
+                const nextY = Math.max(0, Math.min(maxScrollY, desiredY));
+                if (Math.abs(nextY - window.scrollY) < 2) return;
+
+                const reduceMotion = window.matchMedia
+                    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                window.scrollTo({
+                    top: nextY,
+                    behavior: reduceMotion ? 'auto' : 'smooth',
+                });
+            };
+
+            window.requestAnimationFrame(() => {
+                scrollCalendarIntoView();
+                window.setTimeout(scrollCalendarIntoView, 90);
+            });
+        };
+
+        const initInput = (input) => {
+            if (!(input instanceof HTMLInputElement)) return;
+            if (input.dataset.flatpickrBound === '1') return;
+            if (input.getAttribute('data-flatpickr') === 'off') return;
+
+            const pickerType = detectPickerType(input);
+            if (!pickerType) return;
+
+            const originalType = String(input.getAttribute('type') || '').toLowerCase().trim();
+            const nativeType = originalType === 'date' || originalType === 'time' || originalType === 'datetime-local';
+            const mobilePickerMode = isMobilePickerMode();
+            if (mobilePickerMode && nativeType) {
+                // Keep native phone picker controls on mobile devices.
+                input.dataset.flatpickrBound = '1';
+                return;
+            }
+            if (nativeType) {
+                input.setAttribute('type', 'text');
+            }
+
+            const baseOptions = {
+                allowInput: true,
+                disableMobile: true,
+                altInput: true,
+                altInputClass: (input.className ? input.className + ' ' : '') + 'flatpickr-alt-input',
+                parseDate: parseDateFactory(fallbackFormats[pickerType] || []),
+                onOpen: [centerOpenCalendar],
+            };
+            if ((pickerType === 'time' || pickerType === 'datetime') && typeof window.confirmDatePlugin === 'function') {
+                baseOptions.plugins = [
+                    new window.confirmDatePlugin({
+                        confirmText: 'Apply',
+                        showAlways: false,
+                        theme: 'light',
+                    }),
+                ];
+            }
+            const parsedInitialDate = baseOptions.parseDate(input.value);
+            if (parsedInitialDate instanceof Date && !Number.isNaN(parsedInitialDate.getTime())) {
+                baseOptions.defaultDate = parsedInitialDate;
+            }
+
+            if (pickerType === 'date') {
+                baseOptions.dateFormat = String(cfg.machine_date_format || 'Y-m-d');
+                baseOptions.altFormat = String(cfg.alt_date_format || 'Y-m-d');
+            } else if (pickerType === 'time') {
+                baseOptions.enableTime = true;
+                baseOptions.noCalendar = true;
+                baseOptions.time_24hr = !!cfg.time_24hr;
+                baseOptions.enableSeconds = !!cfg.enable_seconds;
+                baseOptions.dateFormat = String(cfg.machine_time_format || 'H:i');
+                baseOptions.altFormat = String(cfg.alt_time_format || 'H:i');
+            } else {
+                baseOptions.enableTime = true;
+                baseOptions.time_24hr = !!cfg.time_24hr;
+                baseOptions.enableSeconds = !!cfg.enable_seconds;
+                baseOptions.dateFormat = String(cfg.machine_datetime_format || 'Y-m-d\\TH:i');
+                baseOptions.altFormat = String(cfg.alt_datetime_format || 'Y-m-d H:i');
+            }
+
+            try {
+                const picker = window.flatpickr(input, baseOptions);
+                if (picker && picker.altInput) {
+                    if (input.style && input.style.cssText) {
+                        picker.altInput.style.cssText = input.style.cssText;
+                    }
+                    if (input.hasAttribute('placeholder')) {
+                        picker.altInput.setAttribute('placeholder', input.getAttribute('placeholder') || '');
+                    }
+                    picker.altInput.required = input.required;
+                    picker.altInput.disabled = input.disabled;
+                    picker.altInput.readOnly = input.readOnly;
+                }
+                input.dataset.flatpickrBound = '1';
+            } catch (e) {
+                // Keep native input as fallback if Flatpickr fails for this field.
+            }
+        };
+
+        const scan = (root) => {
+            if (!(root instanceof Element || root instanceof Document)) return;
+            if (root instanceof HTMLInputElement) {
+                initInput(root);
+            }
+            root.querySelectorAll('input').forEach(initInput);
+        };
+
+        scan(document);
+
+        if (document.body && typeof MutationObserver === 'function') {
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    mutation.addedNodes.forEach((node) => {
+                        if (node instanceof Element) {
+                            scan(node);
+                        }
+                    });
+                });
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+        }
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot);
+    } else {
+        boot();
+    }
+})();
+</script>
+SCRIPT;
+        $cfg = layout_cached_config();
+        $appName = trim((string)($cfg['app']['name'] ?? 'KitGrab'));
+        if ($appName === '') {
+            $appName = 'KitGrab';
+        }
+        $appNameEsc = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
+
         echo '<footer class="text-center text-muted mt-4 small">'
             . $appNameEsc . ' Version ' . $versionEsc . ' - Created by '
             . '<a href="https://www.linkedin.com/in/ben-pirozzolo-76212a88" target="_blank" rel="noopener noreferrer">Ben Pirozzolo</a>'
@@ -271,6 +519,26 @@ if (!function_exists('layout_footer')) {
 }
 
 if (!function_exists('layout_logo_tag')) {
+    function layout_default_logo_url(): string
+    {
+        $scriptName = (string)($_SERVER['SCRIPT_NAME'] ?? '');
+        $scriptDir  = rtrim(str_replace('\\', '/', dirname($scriptName)), '/');
+        $baseDir    = $scriptDir;
+
+        $leaf = $scriptDir !== '' ? basename($scriptDir) : '';
+        if ($leaf === 'install') {
+            $baseDir = rtrim(str_replace('\\', '/', dirname($scriptDir)), '/');
+        } elseif ($leaf === 'upgrade' && basename(dirname($scriptDir)) === 'install') {
+            $baseDir = rtrim(str_replace('\\', '/', dirname(dirname($scriptDir))), '/');
+        }
+
+        if ($baseDir === '') {
+            return '/kitgrab-logo.png';
+        }
+
+        return $baseDir . '/kitgrab-logo.png';
+    }
+
     function layout_logo_tag(?array $cfg = null): string
     {
         $cfg = layout_cached_config($cfg);
@@ -280,31 +548,15 @@ if (!function_exists('layout_logo_tag')) {
             $logoUrl = trim($cfg['app']['logo_url']);
         }
 
-        $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
-        $dir = trim((string)dirname($scriptName), '/');
-        $segments = $dir === '' ? [] : explode('/', $dir);
-        $publicIndex = array_search('public', $segments, true);
-        if ($publicIndex !== false) {
-            $depthFromPublic = count($segments) - ($publicIndex + 1);
-            $prefix = $depthFromPublic > 0 ? str_repeat('../', $depthFromPublic) : '';
-        } else {
-            $depth = $dir === '' ? 0 : substr_count($dir, '/');
-            $prefix = $depth > 0 ? str_repeat('../', $depth) : '';
-        }
-
         if ($logoUrl === '') {
-            $logoUrl = $prefix . 'kitgrab-logo.png';
-        } else {
-            $isAbsolute = preg_match('#^(https?:)?//#i', $logoUrl)
-                || str_starts_with($logoUrl, '/')
-                || str_starts_with($logoUrl, 'data:');
-            if (!$isAbsolute) {
-                $logoUrl = $prefix . $logoUrl;
-            }
+            $logoUrl = layout_default_logo_url();
         }
 
         $urlEsc = htmlspecialchars($logoUrl, ENT_QUOTES, 'UTF-8');
-        $appName = $cfg['app']['name'] ?? 'KitGrab';
+        $appName = trim((string)($cfg['app']['name'] ?? 'KitGrab'));
+        if ($appName === '') {
+            $appName = 'KitGrab';
+        }
         $appNameEsc = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
         return '<div class="app-logo text-center mb-3">'
             . '<a href="index.php" aria-label="Go to dashboard">'

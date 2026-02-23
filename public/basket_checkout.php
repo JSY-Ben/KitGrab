@@ -3,6 +3,7 @@ require_once __DIR__ . '/../src/bootstrap.php';
 require_once SRC_PATH . '/auth.php';
 require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/activity_log.php';
+require_once SRC_PATH . '/reservation_policy.php';
 require_once SRC_PATH . '/inventory_client.php';
 require_once SRC_PATH . '/layout.php';
 
@@ -35,10 +36,36 @@ if ($end <= $start) {
     die('End time must be after start time.');
 }
 
-// Build user info from local user record
-$userName  = trim($user['first_name'] . ' ' . $user['last_name']);
-$userEmail = $user['email'];
-$userId    = $user['id'];
+$isAdmin = !empty($currentUser['is_admin']);
+$isStaff = !empty($currentUser['is_staff']) || $isAdmin;
+$overrideEmail = strtolower(trim((string)($userOverride['email'] ?? '')));
+$currentEmail = strtolower(trim((string)($currentUser['email'] ?? '')));
+$isOnBehalfBooking = is_array($userOverride) && $overrideEmail !== '' && $overrideEmail !== $currentEmail;
+
+// Build user info from local inventory user record
+$userName  = trim((string)($user['first_name'] ?? '') . ' ' . (string)($user['last_name'] ?? ''));
+if ($userName === '') {
+    $userName = trim((string)($user['name'] ?? ''));
+}
+if ($userName === '') {
+    $userName = (string)($user['email'] ?? 'Unknown user');
+}
+$userEmail = (string)($user['email'] ?? '');
+$userId    = (string)($user['id'] ?? ''); // local inventory user id
+
+$reservationPolicy = reservation_policy_get($config);
+$policyViolations = reservation_policy_validate_booking($pdo, $reservationPolicy, [
+    'start_ts' => $startTs,
+    'end_ts' => $endTs,
+    'target_user_id' => $userId,
+    'target_user_email' => $userEmail,
+    'is_admin' => $isAdmin,
+    'is_staff' => $isStaff,
+    'is_on_behalf' => $isOnBehalfBooking,
+]);
+if (!empty($policyViolations)) {
+    die('Could not create booking: ' . htmlspecialchars($policyViolations[0]));
+}
 
 $pdo->beginTransaction();
 
@@ -56,7 +83,7 @@ try {
 
         $model = get_model($modelId);
         if (empty($model['id'])) {
-            throw new Exception('Model not found: ID ' . $modelId);
+            throw new Exception('Model not found in local inventory: ID ' . $modelId);
         }
 
         // How many units of this model are already booked for this time range?
@@ -77,12 +104,12 @@ try {
         $row = $stmt->fetch();
         $existingBooked = $row ? (int)$row['booked_qty'] : 0;
 
-        // Total units in local inventory
-        $totalAssets = count_assets_by_model($modelId);
+        // Total requestable units in local inventory
+        $totalRequestable = count_requestable_assets_by_model($modelId);
         $activeCheckedOut = count_checked_out_assets_by_model($modelId);
-        $availableNow = $totalAssets > 0 ? max(0, $totalAssets - $activeCheckedOut) : 0;
+        $availableNow = $totalRequestable > 0 ? max(0, $totalRequestable - $activeCheckedOut) : 0;
 
-        if ($totalAssets > 0 && $existingBooked + $qty > $availableNow) {
+        if ($totalRequestable > 0 && $existingBooked + $qty > $availableNow) {
             throw new Exception(
                 'Not enough units available for "' . ($model['name'] ?? ('ID '.$modelId)) . '" '
                 . 'in that time period. Requested ' . $qty . ', already booked ' . $existingBooked
@@ -110,22 +137,22 @@ try {
     }
 
     $insertRes = $pdo->prepare("
-    INSERT INTO reservations (
-        user_name, user_email, user_id,
-        asset_id, asset_name_cache,
-        start_datetime, end_datetime, status
-    ) VALUES (
-        :user_name, :user_email, :user_id,
-        0, :asset_name_cache,
-        :start_datetime, :end_datetime, 'pending'
-    )
-");
-$insertRes->execute([
-    ':user_name'        => $userName,
-    ':user_email'       => $userEmail,
-    ':user_id'          => $userId,
-    ':asset_name_cache' => 'Pending checkout',
-    ':start_datetime'   => $start,
+        INSERT INTO reservations (
+            user_name, user_email, user_id,
+            asset_id, asset_name_cache,
+            start_datetime, end_datetime, status
+        ) VALUES (
+            :user_name, :user_email, :user_id,
+            0, :asset_name_cache,
+            :start_datetime, :end_datetime, 'pending'
+        )
+    ");
+    $insertRes->execute([
+        ':user_name'        => $userName,
+        ':user_email'       => $userEmail,
+        ':user_id'          => $userId,
+        ':asset_name_cache' => 'Pending checkout',
+        ':start_datetime'   => $start,
         ':end_datetime'     => $end,
     ]);
 
@@ -153,7 +180,6 @@ $insertRes->execute([
     }
 
     $pdo->commit();
-    clear_catalogue_model_cache_files();
     $_SESSION['basket'] = []; // clear basket
 
     activity_log_event('reservation_submitted', 'Reservation submitted', [

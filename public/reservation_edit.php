@@ -35,16 +35,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'model_search') {
         exit;
     }
     try {
-        $resp = get_bookable_models(1, $q, null, null, 20, []);
+        $resp = get_bookable_models(1, $q, null, 'name_asc', 20);
         $rows = $resp['rows'] ?? [];
         $results = [];
         foreach ($rows as $row) {
             $mid = (int)($row['id'] ?? 0);
             $name = $row['name'] ?? '';
             if ($mid <= 0 || $name === '') {
-                continue;
-            }
-            if (count_assets_by_model($mid) <= 0) {
                 continue;
             }
             $manu = $row['manufacturer']['name'] ?? '';
@@ -228,7 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 $addModel = get_model($addModelId);
                 if (empty($addModel['id'])) {
-                    throw new Exception('Model not found.');
+                    throw new Exception('Model not found in local inventory.');
                 }
                 $addModelLabel = $addModel['name'] ?? ('Model #' . $addModelId);
                 $addModelImage = $addModel['image'] ?? '';
@@ -278,11 +275,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $row = $stmt->fetch();
             $existingBooked = $row ? (int)$row['booked_qty'] : 0;
 
-            $totalAssets = count_assets_by_model($mid);
+            $totalRequestable = count_requestable_assets_by_model($mid);
             $activeCheckedOut = count_checked_out_assets_by_model($mid);
-            $availableNow = $totalAssets > 0 ? max(0, $totalAssets - $activeCheckedOut) : 0;
+            $availableNow = $totalRequestable > 0 ? max(0, $totalRequestable - $activeCheckedOut) : 0;
 
-            if ($totalAssets > 0 && $existingBooked + $qty > $availableNow) {
+            if ($totalRequestable > 0 && $existingBooked + $qty > $availableNow) {
                 $errors[] = 'Not enough units available for "' . $modelName . '" in that time period.';
             }
         }
@@ -498,12 +495,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         $qty = $displayQty[$mid] ?? (int)($item['quantity'] ?? 0);
                                         $name = $item['model_name_cache'] ?? ('Model #' . $mid);
                                         $imagePath = $modelImageMap[$mid] ?? '';
-                                        $imageUrl = $imagePath !== '' ? $imagePath : '';
+                                        $proxiedImage = $imagePath !== ''
+                                            ? 'image_proxy.php?src=' . urlencode($imagePath)
+                                            : '';
                                     ?>
                                     <tr>
                                         <td>
-                                            <?php if ($imageUrl !== ''): ?>
-                                                <img src="<?= h($imageUrl) ?>"
+                                            <?php if ($proxiedImage !== ''): ?>
+                                                <img src="<?= h($proxiedImage) ?>"
                                                      alt="<?= h($name) ?>"
                                                      class="reservation-model-image">
                                             <?php else: ?>

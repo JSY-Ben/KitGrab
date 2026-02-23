@@ -90,7 +90,7 @@ if (!$tabFile || !is_file($tabFile)) {
         <div class="page-header">
             <h1>Reservations</h1>
             <div class="page-subtitle">
-                Manage reservation history, today’s checkouts, and checked-out assets from one place.
+                Manage today’s checkouts, checked-out reservations, check-ins, and history from one place.
             </div>
         </div>
 
@@ -114,7 +114,7 @@ if (!$tabFile || !is_file($tabFile)) {
             </li>
             <li class="nav-item">
                 <a class="nav-link <?= $tab === 'checked_out' ? 'active' : '' ?>"
-                   href="reservations.php?tab=checked_out">Checked out Assets</a>
+                   href="reservations.php?tab=checked_out">Checked Out Reservations</a>
             </li>
             <li class="nav-item">
                 <a class="nav-link <?= $tab === 'checkin' ? 'active' : '' ?>"

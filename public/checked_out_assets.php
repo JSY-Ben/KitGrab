@@ -43,46 +43,15 @@ function load_asset_labels(PDO $pdo, array $assetIds): array
     return $labels;
 }
 
-function load_asset_assignees(PDO $pdo, array $assetIds): array
-{
-    $assetIds = array_values(array_filter(array_map('intval', $assetIds), static function (int $id): bool {
-        return $id > 0;
-    }));
-    if (empty($assetIds)) {
-        return [];
-    }
-
-    $placeholders = implode(',', array_fill(0, count($assetIds), '?'));
-    $stmt = $pdo->prepare("
-        SELECT asset_id, assigned_to_name, assigned_to_email, assigned_to_username
-          FROM checked_out_asset_cache
-         WHERE asset_id IN ({$placeholders})
-    ");
-    $stmt->execute($assetIds);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $labels = [];
-    foreach ($rows as $row) {
-        $assetId = (int)($row['asset_id'] ?? 0);
-        if ($assetId <= 0) {
-            continue;
-        }
-        $name = trim((string)($row['assigned_to_name'] ?? ''));
-        $email = trim((string)($row['assigned_to_email'] ?? ''));
-        $username = trim((string)($row['assigned_to_username'] ?? ''));
-        $label = $name !== '' ? $name : ($email !== '' ? $email : $username);
-        $labels[$assetId] = $label;
-    }
-
-    return $labels;
-}
-
 function format_display_date($val): string
 {
     if (is_array($val)) {
         $val = $val['datetime'] ?? ($val['date'] ?? '');
     }
-    return layout_format_date($val);
+    if (empty($val)) {
+        return '';
+    }
+    return app_format_date($val);
 }
 
 function format_display_datetime($val): string
@@ -90,7 +59,10 @@ function format_display_datetime($val): string
     if (is_array($val)) {
         $val = $val['datetime'] ?? ($val['date'] ?? '');
     }
-    return layout_format_datetime($val);
+    if (empty($val)) {
+        return '';
+    }
+    return app_format_datetime($val);
 }
 
 function normalize_expected_datetime(?string $raw): string
@@ -132,7 +104,6 @@ $embedded  = defined('RESERVATIONS_EMBED');
 $pageBase  = $embedded ? 'reservations.php' : 'checked_out_assets.php';
 $baseQuery = $embedded ? ['tab' => 'checked_out'] : [];
 $messages  = [];
-$forceRefresh = false;
 
 if (!$isStaff) {
     http_response_code(403);
@@ -164,36 +135,17 @@ $sortOptions = [
     'checkout_asc',
 ];
 $sort = in_array($sortRaw, $sortOptions, true) ? $sortRaw : 'expected_asc';
+$forceRefresh = isset($_REQUEST['refresh']) && $_REQUEST['refresh'] === '1';
+if ($forceRefresh) {
+    // Disable cached local inventory responses for this request
+    if (isset($cacheTtl)) {
+        $GLOBALS['_layout_prev_cache_ttl'] = $cacheTtl;
+    }
+    $cacheTtl = 0;
+}
 
 // Handle renew actions (all/overdue tabs)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['checkin_asset_id'])) {
-        $checkinId = (int)$_POST['checkin_asset_id'];
-        $checkinNote = trim((string)($_POST['checkin_note'] ?? ''));
-        if ($checkinId > 0) {
-            try {
-                $assignees = load_asset_assignees($pdo, [$checkinId]);
-                $labels = load_asset_labels($pdo, [$checkinId]);
-                $label = $labels[$checkinId] ?? ('Asset #' . $checkinId);
-                $assigneeLabel = $assignees[$checkinId] ?? '';
-                checkin_asset($checkinId, $checkinNote);
-                $messages[] = "Checked in {$label}.";
-                activity_log_event('asset_checkin', 'Asset checked in', [
-                    'subject_type' => 'asset',
-                    'subject_id' => $checkinId,
-                    'metadata' => [
-                        'assets' => [$label],
-                        'count' => 1,
-                        'note' => $checkinNote,
-                        'checked_in_from' => $assigneeLabel !== '' ? [$assigneeLabel] : [],
-                    ],
-                ]);
-            } catch (Throwable $e) {
-                $error = 'Could not check in asset: ' . $e->getMessage();
-            }
-        }
-    }
-
     // Renew single
     if (isset($_POST['renew_asset_id'])) {
         $renewId = (int)$_POST['renew_asset_id'];
@@ -259,47 +211,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
             } catch (Throwable $e) {
                 $error = 'Could not renew selected assets: ' . $e->getMessage();
-            }
-        }
-    }
-
-    // Check in selected items
-    if (isset($_POST['bulk_checkin']) && $_POST['bulk_checkin'] === '1') {
-        $bulkIds = $_POST['bulk_asset_ids'] ?? [];
-        $checkinNote = trim((string)($_POST['checkin_note'] ?? ''));
-        if (empty($bulkIds) || !is_array($bulkIds)) {
-            $error = 'Select at least one asset to check in.';
-        } else {
-            try {
-                $assetIds = array_values(array_filter(array_map('intval', $bulkIds), static function (int $id): bool {
-                    return $id > 0;
-                }));
-                if (empty($assetIds)) {
-                    $error = 'Select at least one valid asset to check in.';
-                } else {
-                    $assignees = load_asset_assignees($pdo, $assetIds);
-                    $labels = load_asset_labels($pdo, $assetIds);
-                    $assetLabels = array_values(array_filter(array_map(static function (int $id) use ($labels): string {
-                        return $labels[$id] ?? ('Asset #' . $id);
-                    }, $assetIds)));
-                    $assigneeLabels = array_values(array_unique(array_filter(array_values($assignees), static function (string $label): bool {
-                        return $label !== '';
-                    })));
-                    foreach ($assetIds as $assetId) {
-                        checkin_asset($assetId, $checkinNote);
-                    }
-                    $messages[] = 'Checked in ' . count($assetIds) . ' asset(s).';
-                    activity_log_event('asset_checkin', 'Checked out assets checked in', [
-                        'metadata' => [
-                            'assets' => $assetLabels,
-                            'count' => count($assetIds),
-                            'note' => $checkinNote,
-                            'checked_in_from' => $assigneeLabels,
-                        ],
-                    ]);
-                }
-            } catch (Throwable $e) {
-                $error = 'Could not check in selected assets: ' . $e->getMessage();
             }
         }
     }
@@ -459,7 +370,7 @@ function layout_checked_out_url(string $base, array $params): string
         <div class="page-header">
             <h1>Checked Out Reservations</h1>
             <div class="page-subtitle">
-                Showing assets currently checked out.
+                Showing requestable assets currently checked out in local inventory.
             </div>
         </div>
 
@@ -559,10 +470,10 @@ function layout_checked_out_url(string $base, array $params): string
 
         <?php if (empty($assets) && !$error): ?>
             <div class="alert alert-secondary">
-                No <?= $view === 'overdue' ? 'overdue ' : '' ?>checked-out assets.
+                No <?= $view === 'overdue' ? 'overdue ' : '' ?>checked-out requestable assets.
             </div>
         <?php else: ?>
-            <form method="post" id="checked-out-form">
+            <form method="post">
                 <input type="hidden" name="view" value="<?= h($view) ?>">
                 <?php if ($search !== ''): ?>
                     <input type="hidden" name="q" value="<?= h($search) ?>">
@@ -570,9 +481,6 @@ function layout_checked_out_url(string $base, array $params): string
                 <input type="hidden" name="per_page" value="<?= (int)$perPage ?>">
                 <input type="hidden" name="page" value="<?= (int)$page ?>">
                 <input type="hidden" name="sort" value="<?= h($sort) ?>">
-                <input type="hidden" name="checkin_note" id="checkin-note-input" value="">
-                <input type="hidden" name="checkin_asset_id" id="checkin-asset-id" value="">
-                <input type="hidden" name="bulk_checkin" id="bulk-checkin-flag" value="">
                 <div class="d-flex flex-wrap gap-2 align-items-end mb-2">
                     <div>
                         <label class="form-label mb-1">Renew selected to</label>
@@ -583,11 +491,6 @@ function layout_checked_out_url(string $base, array $params): string
                             value="1"
                             class="btn btn-outline-primary btn-sm">
                         Renew selected
-                    </button>
-                    <button type="button"
-                            id="bulk-checkin-button"
-                            class="btn btn-outline-success btn-sm">
-                        Check in selected
                     </button>
                 </div>
                 <div class="form-check mb-2">
@@ -608,7 +511,7 @@ function layout_checked_out_url(string $base, array $params): string
                                 <th>Assigned Since</th>
                                 <th>Expected Check-in</th>
                                 <th>Renew to</th>
-                                <th>Actions</th>
+                                <th></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -653,22 +556,14 @@ function layout_checked_out_url(string $base, array $params): string
                                                name="renew_expected[<?= $aid ?>]"
                                                class="form-control form-control-sm">
                                     </td>
-                                    <td class="text-end">
-                                        <div class="d-flex flex-column gap-2 align-items-end">
-                                            <button type="submit"
-                                                    name="renew_asset_id"
-                                                    value="<?= $aid ?>"
-                                                    class="btn btn-sm btn-outline-primary"
-                                                    <?php if ($aid <= 0): ?>disabled<?php endif; ?>>
-                                                Renew
-                                            </button>
-                                            <button type="button"
-                                                    class="btn btn-sm btn-outline-success checkin-item-button"
-                                                    data-asset-id="<?= $aid ?>"
-                                                    <?php if ($aid <= 0): ?>disabled<?php endif; ?>>
-                                                Check in
-                                            </button>
-                                        </div>
+                                    <td>
+                                        <button type="submit"
+                                                name="renew_asset_id"
+                                                value="<?= $aid ?>"
+                                                class="btn btn-sm btn-outline-primary"
+                                                <?php if ($aid <= 0): ?>disabled<?php endif; ?>>
+                                            Renew
+                                        </button>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -714,30 +609,7 @@ function layout_checked_out_url(string $base, array $params): string
                     </ul>
                 </nav>
             <?php endif; ?>
-<?php endif; ?>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<div class="modal fade" id="checkinNoteModal" tabindex="-1" aria-labelledby="checkinNoteModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="checkinNoteModalLabel">Check-in Note</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div class="mb-2">
-                    <div class="text-muted small">Checking in</div>
-                    <div class="fw-semibold" id="checkin-note-assets">Selected assets</div>
-                </div>
-                <label for="checkin-note-textarea" class="form-label">Optional note</label>
-                <textarea id="checkin-note-textarea" class="form-control" rows="3" placeholder="Add a note (optional)"></textarea>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" id="confirm-checkin-button">Confirm check-in</button>
-            </div>
-        </div>
-    </div>
-</div>
+        <?php endif; ?>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const scrollKey = 'checked_out_scroll_y';
@@ -779,84 +651,6 @@ document.addEventListener('DOMContentLoaded', function () {
     if (sortSelect && filterForm) {
         sortSelect.addEventListener('change', function () {
             filterForm.submit();
-        });
-    }
-
-    const checkinForm = document.getElementById('checked-out-form');
-    const noteModalEl = document.getElementById('checkinNoteModal');
-    if (noteModalEl && noteModalEl.parentElement !== document.body) {
-        document.body.appendChild(noteModalEl);
-    }
-    if (checkinForm && noteModalEl && window.bootstrap) {
-        const modal = new bootstrap.Modal(noteModalEl);
-        const noteInput = document.getElementById('checkin-note-input');
-        const assetInput = document.getElementById('checkin-asset-id');
-        const bulkInput = document.getElementById('bulk-checkin-flag');
-        const noteTextarea = document.getElementById('checkin-note-textarea');
-        const confirmBtn = document.getElementById('confirm-checkin-button');
-        const noteAssets = document.getElementById('checkin-note-assets');
-        const bulkBtn = document.getElementById('bulk-checkin-button');
-
-        const openModal = (options) => {
-            if (!noteInput || !assetInput || !bulkInput || !noteTextarea || !confirmBtn) {
-                return;
-            }
-            noteTextarea.value = '';
-            assetInput.value = options.assetId || '';
-            bulkInput.value = options.bulk ? '1' : '';
-            if (noteAssets) {
-                noteAssets.textContent = options.assetsLabel || 'Selected assets';
-            }
-            modal.show();
-        };
-
-        checkinForm.querySelectorAll('.checkin-item-button').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                const assetId = btn.dataset.assetId || '';
-                if (!assetId) {
-                    return;
-                }
-                const row = btn.closest('tr');
-                const tagCell = row ? row.querySelector('td:nth-child(2)') : null;
-                const label = tagCell ? tagCell.textContent.trim() : 'Selected asset';
-                openModal({ assetId: assetId, bulk: false, assetsLabel: label });
-            });
-        });
-
-        if (bulkBtn) {
-            bulkBtn.addEventListener('click', () => {
-                const boxes = checkinForm.querySelectorAll('input[name="bulk_asset_ids[]"]');
-                const anyChecked = Array.from(boxes).some((box) => box.checked);
-                if (!anyChecked) {
-                    alert('Select at least one asset to check in.');
-                    return;
-                }
-                const selectedLabels = Array.from(boxes)
-                    .filter((box) => box.checked)
-                    .map((box) => {
-                        const row = box.closest('tr');
-                        const tagCell = row ? row.querySelector('td:nth-child(2)') : null;
-                        return tagCell ? tagCell.textContent.trim() : '';
-                    })
-                    .filter((label) => label !== '');
-                let displayLabel = 'Selected assets';
-                if (selectedLabels.length) {
-                    const maxShown = 6;
-                    const shown = selectedLabels.slice(0, maxShown);
-                    const remaining = selectedLabels.length - shown.length;
-                    displayLabel = shown.join(', ');
-                    if (remaining > 0) {
-                        displayLabel += `, +${remaining} more`;
-                    }
-                }
-                openModal({ assetId: '', bulk: true, assetsLabel: displayLabel });
-            });
-        }
-
-        confirmBtn.addEventListener('click', () => {
-            noteInput.value = noteTextarea.value.trim();
-            modal.hide();
-            checkinForm.submit();
         });
     }
 });

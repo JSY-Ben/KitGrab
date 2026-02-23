@@ -14,20 +14,14 @@ $pageBase  = $embedded ? 'reservations.php' : 'staff_reservations.php';
 $baseQuery = $embedded ? ['tab' => 'history'] : [];
 $editSuffix = $embedded ? '&from=reservations' : '';
 
-/**
- * Convert YYYY-MM-DD → DD/MM/YYYY.
- */
-function uk_date(?string $isoDate): string
+function display_date(?string $isoDate): string
 {
-    return layout_format_date($isoDate);
+    return app_format_date($isoDate);
 }
 
-/**
- * Convert YYYY-MM-DD HH:MM:SS → DD/MM/YYYY.
- */
-function uk_datetime(?string $isoDatetime): string
+function display_datetime(?string $isoDatetime): string
 {
-    return layout_format_datetime($isoDatetime);
+    return app_format_datetime($isoDatetime);
 }
 
 // Only staff/admin allowed
@@ -147,11 +141,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resto
                 $row = $stmt->fetch();
                 $existingBooked = $row ? (int)$row['booked_qty'] : 0;
 
-                $totalAssets = count_assets_by_model($mid);
+                $totalRequestable = count_requestable_assets_by_model($mid);
                 $activeCheckedOut = count_checked_out_assets_by_model($mid);
-                $availableNow = $totalAssets > 0 ? max(0, $totalAssets - $activeCheckedOut) : 0;
+                $availableNow = $totalRequestable > 0 ? max(0, $totalRequestable - $activeCheckedOut) : 0;
 
-                if ($totalAssets > 0 && $existingBooked + $qty > $availableNow) {
+                if ($totalRequestable > 0 && $existingBooked + $qty > $availableNow) {
                     throw new Exception('Not enough units available for "' . $modelName . '" in that time period.');
                 }
             }
@@ -472,8 +466,8 @@ try {
                                 <td data-label="Items Reserved" class="items-cell">
                                     <?= $itemsText !== '' ? '<div class="items-cell-content">' . $itemsText . '</div>' : '' ?>
                                 </td>
-                                <td data-label="Start"><?= uk_datetime($r['start_datetime'] ?? '') ?></td>
-                                <td data-label="End"><?= uk_datetime($r['end_datetime'] ?? '') ?></td>
+                                <td data-label="Start"><?= display_datetime($r['start_datetime'] ?? '') ?></td>
+                                <td data-label="End"><?= display_datetime($r['end_datetime'] ?? '') ?></td>
                                 <td data-label="Status"><?= h($r['status'] ?? '') ?></td>
                                 <td data-label="Actions" class="actions-cell">
                                     <div class="d-flex gap-2">

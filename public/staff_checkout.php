@@ -3,8 +3,8 @@
 //
 // Staff-only page that:
 // 1) Shows today's bookings from the booking app.
-// 2) Provides a bulk checkout panel that checks out scanned asset tags
-//    to a local user record.
+// 2) Provides a bulk checkout panel that uses the local inventory API to
+//    check out scanned asset tags to a local inventory user.
 
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once SRC_PATH . '/auth.php';
@@ -53,7 +53,7 @@ if (($_GET['ajax'] ?? '') === 'user_search') {
         foreach ($rows as $row) {
             $results[] = [
                 'id'       => $row['id'] ?? null,
-                'name'     => $row['name'] ?? '',
+                'name'     => $row['name'] ?? ($row['username'] ?? ''),
                 'email'    => $row['email'] ?? '',
                 'username' => $row['username'] ?? '',
             ];
@@ -81,16 +81,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 }
 
 // ---------------------------------------------------------------------
-// Helper: UK date/time display from Y-m-d H:i:s
+// Helper: app-configured date/time display
 // ---------------------------------------------------------------------
-function uk_datetime_display(?string $iso): string
+function display_datetime(?string $iso): string
 {
-    return layout_format_datetime($iso);
-}
-
-function uk_datetime_display_12h(?string $iso): string
-{
-    return layout_format_datetime($iso);
+    return app_format_datetime($iso);
 }
 
 /**
@@ -171,6 +166,14 @@ $selectedReservationId = isset($_SESSION['selected_reservation_id'])
 // Messages
 $checkoutMessages = [];
 $checkoutErrors   = [];
+$checkoutWarnings = [];
+$reservationUserCandidates = [];
+$bulkUserCandidates = [];
+$selectedReservationUserId = 0;
+$selectedBulkUserId = 0;
+$bulkCheckoutToValue = '';
+$bulkNoteValue = '';
+$reservationNoteValue = '';
 
 // Current counts per model already in checkout list (for quota enforcement)
 $currentModelCounts = [];
@@ -203,9 +206,6 @@ if (isset($_GET['remove'])) {
     $removeId = (int)$_GET['remove'];
     if ($removeId > 0 && isset($checkoutAssets[$removeId])) {
         unset($checkoutAssets[$removeId]);
-    }
-    if ($selectedReservationId) {
-        $_SESSION['selected_reservation_fresh'] = 1;
     }
     header('Location: ' . $selfUrl);
     exit;
@@ -271,9 +271,8 @@ if ($selectedReservationId) {
                     $assetsRaw = list_assets_by_model($mid, 300);
                     $filtered  = [];
                     foreach ($assetsRaw as $a) {
-                        $statusValue = strtolower((string)($a['status'] ?? ''));
-                        if (in_array($statusValue, ['checked_out', 'maintenance', 'retired'], true)) {
-                            continue;
+                        if (empty($a['requestable'])) {
+                            continue; // skip non-requestable assets
                         }
                         $assigned = $a['assigned_to'] ?? ($a['assigned_to_fullname'] ?? '');
                         $statusRaw = $a['status_label'] ?? '';
@@ -456,24 +455,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $modelName = $asset['model']['name'] ?? '';
                 $modelId   = (int)($asset['model']['id'] ?? 0);
                 $status    = $asset['status_label'] ?? '';
-                $statusValue = strtolower((string)($asset['status'] ?? ''));
+                $isRequestable = !empty($asset['requestable']);
 
                 // Normalise status label to a string (API may return array/object)
                 if (is_array($status)) {
                     $status = $status['name'] ?? $status['status_meta'] ?? $status['label'] ?? '';
                 }
-                if ($status === '' && $statusValue !== '') {
-                    $status = ucwords(str_replace('_', ' ', $statusValue));
-                }
 
                 if ($assetId <= 0 || $assetTag === '') {
-                    throw new Exception('Asset record is missing id/asset_tag.');
+                    throw new Exception('Asset record from local inventory is missing id/asset_tag.');
                 }
                 if ($modelId <= 0) {
-                    throw new Exception('Asset record is missing model information.');
+                    throw new Exception('Asset record from local inventory is missing model information.');
                 }
-                if (in_array($statusValue, ['checked_out', 'maintenance', 'retired'], true)) {
-                    throw new Exception('This asset is not available for checkout.');
+                if (!$isRequestable) {
+                    throw new Exception('This asset is not requestable in local inventory.');
                 }
 
                 // Enforce that the asset's model is in the selected reservation and within quantity.
@@ -512,8 +508,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$selectedReservation) {
             $checkoutErrors[] = 'Please select a reservation for today before checking out.';
         } else {
-$checkoutTo = trim($selectedReservation['user_name'] ?? '');
-            $note       = trim($_POST['reservation_note'] ?? '');
+            $checkoutTo = trim($selectedReservation['user_email'] ?? '');
+            if ($checkoutTo === '') {
+                $checkoutTo = trim($selectedReservation['user_name'] ?? '');
+            }
+            $note = trim($_POST['reservation_note'] ?? '');
+            $reservationNoteValue = $note;
+            $selectedReservationUserId = (int)($_POST['reservation_user_id'] ?? 0);
             if ($checkoutTo === '') {
                 $checkoutErrors[] = 'This reservation has no associated user name.';
             }
@@ -522,14 +523,16 @@ $checkoutTo = trim($selectedReservation['user_name'] ?? '');
             $assetsToCheckout    = [];
 
             // Validate selections against required quantities
-        foreach ($selectedItems as $item) {
-            $mid    = (int)$item['model_id'];
-            $qty    = (int)$item['qty'];
-            $choices = $modelAssets[$mid] ?? [];
-            $choicesById = [];
-            foreach ($choices as $c) {
-                $choicesById[(int)($c['id'] ?? 0)] = $c;
-            }
+            foreach ($selectedItems as $item) {
+                $mid    = (int)$item['model_id'];
+                $qty    = (int)$item['qty'];
+                $choices = $modelAssets[$mid] ?? [];
+                $choicesById = [];
+                foreach ($choices as $c) {
+                    if (!empty($c['requestable'])) {
+                        $choicesById[(int)($c['id'] ?? 0)] = $c;
+                    }
+                }
 
                 $selectedForModel = isset($selectedAssetsInput[$mid]) && is_array($selectedAssetsInput[$mid])
                     ? array_values($selectedAssetsInput[$mid])
@@ -562,81 +565,108 @@ $checkoutTo = trim($selectedReservation['user_name'] ?? '');
 
             if (empty($checkoutErrors) && !empty($assetsToCheckout)) {
                 try {
-                    $user = find_single_user_by_email_or_name($checkoutTo);
-                    $userId   = (int)($user['id'] ?? 0);
-                    $userName = $user['name'] ?? ($user['username'] ?? $checkoutTo);
-
-                    if ($userId <= 0) {
-                        throw new Exception('Matched user has no valid ID.');
+                    $user = null;
+                    $result = find_user_by_email_or_name_with_candidates($checkoutTo);
+                    if (!empty($result['user'])) {
+                        $user = $result['user'];
+                    } else {
+                        $reservationUserCandidates = $result['candidates'];
+                        if ($selectedReservationUserId > 0) {
+                            foreach ($reservationUserCandidates as $candidate) {
+                                if ((int)($candidate['id'] ?? 0) === $selectedReservationUserId) {
+                                    $user = $candidate;
+                                    break;
+                                }
+                            }
+                            if (!$user) {
+                                $checkoutErrors[] = 'Selected user is not available for this reservation. Please choose again.';
+                            }
+                        } else {
+                            $checkoutWarnings[] = "Multiple local inventory users matched '{$checkoutTo}'. Please choose which account to use.";
+                        }
                     }
 
-                    foreach ($assetsToCheckout as $a) {
-                        checkout_asset_to_user((int)$a['asset_id'], $userId, $note, $selectedEnd);
-                        $checkoutMessages[] = "Checked out asset {$a['asset_tag']} to {$userName}.";
+                    if ($user) {
+                        $userId   = (int)($user['id'] ?? 0);
+                        $userName = $user['name'] ?? ($user['username'] ?? $checkoutTo);
+
+                        if ($userId <= 0) {
+                            throw new Exception('Matched user has no valid ID.');
+                        }
+
+                        foreach ($assetsToCheckout as $a) {
+                            checkout_asset_to_user((int)$a['asset_id'], $userId, $note, $selectedEnd);
+                            $checkoutMessages[] = "Checked out asset {$a['asset_tag']} to {$userName}.";
+                        }
+
+                        // Mark reservation as checked out and store asset tags
+                        $assetTags = array_map(function ($a) {
+                            $tag   = $a['asset_tag'] ?? '';
+                            $model = $a['model_name'] ?? '';
+                            return $model !== '' ? "{$tag} ({$model})" : $tag;
+                        }, $assetsToCheckout);
+                        $assetsText = implode(', ', array_filter($assetTags));
+
+                        $upd = $pdo->prepare("
+                            UPDATE reservations
+                               SET status = 'completed',
+                                   asset_name_cache = :assets_text
+                             WHERE id = :id
+                        ");
+                        $upd->execute([
+                            ':id'          => $selectedReservationId,
+                            ':assets_text' => $assetsText,
+                        ]);
+                        $checkoutMessages[] = 'Reservation marked as checked out.';
+                        if ($selectedReservationId) {
+                            unset($_SESSION['reservation_selected_assets'][$selectedReservationId]);
+                        }
+
+                        activity_log_event('reservation_checked_out', 'Reservation checked out', [
+                            'subject_type' => 'reservation',
+                            'subject_id'   => $selectedReservationId,
+                            'metadata'     => [
+                                'checked_out_to' => $userName,
+                                'assets'         => $assetTags,
+                                'note'           => $note,
+                            ],
+                        ]);
+
+                        // Email notifications
+                        $userEmail = $selectedReservation['user_email'] ?? '';
+                        $userName  = $selectedReservation['user_name'] ?? ($selectedReservation['user_email'] ?? 'User');
+                        $staffEmail = $currentUser['email'] ?? '';
+                        $staffName  = trim(($currentUser['first_name'] ?? '') . ' ' . ($currentUser['last_name'] ?? ''));
+                        $dueDate    = $selectedReservation['end_datetime'] ?? '';
+                        $dueDisplay = $dueDate ? display_datetime($dueDate) : 'N/A';
+
+                        $assetLines = $assetsText !== '' ? $assetsText : implode(', ', array_filter($assetTags));
+                        $bodyLines = [
+                            "Reservation #{$selectedReservationId} has been checked out.",
+                            "Items: {$assetLines}",
+                            "Return by: {$dueDisplay}",
+                            $note !== '' ? "Note: {$note}" : '',
+                            "Checked out by: {$staffName}",
+                        ];
+                        if ($userEmail !== '') {
+                            layout_send_notification($userEmail, $userName, 'Your reservation has been checked out', $bodyLines);
+                        }
+                        if ($staffEmail !== '') {
+                            layout_send_notification($staffEmail, $staffName !== '' ? $staffName : $staffEmail, 'You checked out a reservation', $bodyLines);
+                        }
+
+                        // Clear selected reservation to avoid repeat
+                        unset($_SESSION['selected_reservation_id']);
+                        $selectedReservationId = null;
+                        $selectedReservation = null;
+                        $selectedItems = [];
+                        $modelAssets = [];
+                        $presetSelections = [];
+                        $selectedTotalQty = 0;
+                        $reservationUserCandidates = [];
+                        $selectedReservationUserId = 0;
+                        $reservationNoteValue = '';
                     }
-
-                    // Mark reservation as checked out and store asset tags
-                    $assetTags = array_map(function ($a) {
-                        $tag   = $a['asset_tag'] ?? '';
-                        $model = $a['model_name'] ?? '';
-                        return $model !== '' ? "{$tag} ({$model})" : $tag;
-                    }, $assetsToCheckout);
-                    $assetsText = implode(', ', array_filter($assetTags));
-
-                    $upd = $pdo->prepare("
-                        UPDATE reservations
-                           SET status = 'completed',
-                               asset_name_cache = :assets_text
-                         WHERE id = :id
-                    ");
-                    $upd->execute([
-                        ':id'          => $selectedReservationId,
-        ':assets_text' => $assetsText,
-                    ]);
-                    $checkoutMessages[] = 'Reservation marked as checked out.';
-                    if ($selectedReservationId) {
-                        unset($_SESSION['reservation_selected_assets'][$selectedReservationId]);
-                    }
-
-                    activity_log_event('asset_checkout', 'Reservation checked out', [
-                        'subject_type' => 'reservation',
-                        'subject_id'   => $selectedReservationId,
-                        'metadata'     => [
-                            'checked_out_to' => $userName,
-                            'assets'         => $assetTags,
-                            'note'           => $note,
-                        ],
-                    ]);
-
-                    // Email notifications
-                    $userEmail = $selectedReservation['user_email'] ?? '';
-                    $userName  = $selectedReservation['user_name'] ?? ($selectedReservation['user_email'] ?? 'User');
-                    $staffEmail = $currentUser['email'] ?? '';
-                    $staffName  = trim(($currentUser['first_name'] ?? '') . ' ' . ($currentUser['last_name'] ?? ''));
-                    $dueDate    = $selectedReservation['end_datetime'] ?? '';
-                    $dueDisplay = $dueDate ? uk_datetime_display_12h($dueDate) : 'N/A';
-
-                    $assetLines = $assetsText !== '' ? $assetsText : implode(', ', array_filter($assetTags));
-                    $bodyLines = [
-                        "Reservation #{$selectedReservationId} has been checked out.",
-                        "Items: {$assetLines}",
-                        "Return by: {$dueDisplay}",
-                        $note !== '' ? "Note: {$note}" : '',
-                        "Checked out by: {$staffName}",
-                    ];
-                    if ($userEmail !== '') {
-                        layout_send_notification($userEmail, $userName, 'Your reservation has been checked out', $bodyLines);
-                    }
-                    if ($staffEmail !== '') {
-                        layout_send_notification($staffEmail, $staffName !== '' ? $staffName : $staffEmail, 'You checked out a reservation', $bodyLines);
-                    }
-
-                    // Clear selected reservation to avoid repeat
-                    unset($_SESSION['selected_reservation_id']);
-                    $selectedReservationId = null;
-                    $_SESSION['checkout_flash_success'] = 'Reservation checked out. Ready for the next checkout.';
-                    header('Location: ' . $selfUrl);
-                    exit;
                 } catch (Throwable $e) {
                     $checkoutErrors[] = 'Reservation checkout failed: ' . $e->getMessage();
                 }
@@ -645,79 +675,103 @@ $checkoutTo = trim($selectedReservation['user_name'] ?? '');
     } elseif ($mode === 'checkout') {
         $checkoutTo = trim($_POST['checkout_to'] ?? '');
         $note       = trim($_POST['note'] ?? '');
+        $selectedBulkUserId = (int)($_POST['checkout_user_id'] ?? 0);
+        $bulkCheckoutToValue = $checkoutTo;
+        $bulkNoteValue = $note;
 
         if (!$selectedReservation) {
             $checkoutErrors[] = 'Please select a reservation for today before checking out.';
         } elseif ($checkoutTo === '') {
-            $checkoutErrors[] = 'Please enter the user (email or name) to check out to.';
+            $checkoutErrors[] = 'Please enter the local inventory user (email or name) to check out to.';
         } elseif (empty($checkoutAssets)) {
             $checkoutErrors[] = 'There are no assets in the checkout list.';
         } else {
             try {
-                // Find a single user by email or name
-                $user = find_single_user_by_email_or_name($checkoutTo);
-                $userId   = (int)($user['id'] ?? 0);
-                $userName = $user['name'] ?? ($user['username'] ?? $checkoutTo);
-
-                if ($userId <= 0) {
-                    throw new Exception('Matched user has no valid ID.');
-                }
-
-                // Attempt to check out each asset
-                foreach ($checkoutAssets as $asset) {
-                    $assetId  = (int)$asset['id'];
-                    $assetTag = $asset['asset_tag'] ?? '';
-                    $modelId  = isset($asset['model_id']) ? (int)$asset['model_id'] : 0;
-
-                    // Re-check quotas before checkout
-                    if ($modelId > 0 && isset($modelLimits[$modelId])) {
-                        $allowed = $modelLimits[$modelId];
-                        $countForModel = 0;
-                        foreach ($checkoutAssets as $a2) {
-                            if ((int)($a2['model_id'] ?? 0) === $modelId) {
-                                $countForModel++;
+                $user = null;
+                $result = find_user_by_email_or_name_with_candidates($checkoutTo);
+                if (!empty($result['user'])) {
+                    $user = $result['user'];
+                } else {
+                    $bulkUserCandidates = $result['candidates'];
+                    if ($selectedBulkUserId > 0) {
+                        foreach ($bulkUserCandidates as $candidate) {
+                            if ((int)($candidate['id'] ?? 0) === $selectedBulkUserId) {
+                                $user = $candidate;
+                                break;
                             }
                         }
-                        if ($countForModel > $allowed) {
-                            throw new Exception("Too many assets of model {$asset['model']} for this reservation (allowed {$allowed}).");
+                        if (!$user) {
+                            $checkoutErrors[] = 'Selected user is not available for this checkout. Please choose again.';
                         }
-                    } elseif ($modelId > 0 && $selectedStart && $selectedEnd) {
-                        if (model_booked_elsewhere($pdo, $modelId, $selectedStart, $selectedEnd, $selectedReservationId)) {
-                            throw new Exception("Model {$asset['model']} is booked in another reservation for this window.");
-                        }
-                    }
-
-                    try {
-                        // Store expected end datetime with the checkout
-                        checkout_asset_to_user($assetId, $userId, $note, $selectedEnd);
-                        $checkoutMessages[] = "Checked out asset {$assetTag} to {$userName}.";
-                    } catch (Throwable $e) {
-                        $checkoutErrors[] = "Failed to check out {$assetTag}: " . $e->getMessage();
+                    } else {
+                        $checkoutWarnings[] = "Multiple local inventory users matched '{$checkoutTo}'. Please choose which account to use.";
                     }
                 }
 
-                // If no errors, clear the list
-                if (empty($checkoutErrors)) {
-                    $assetTags = array_map(static function ($asset): string {
-                        $tag = $asset['asset_tag'] ?? '';
-                        $model = $asset['model'] ?? '';
-                        return $model !== '' ? ($tag . ' (' . $model . ')') : $tag;
-                    }, $checkoutAssets);
+                if ($user) {
+                    $userId   = (int)($user['id'] ?? 0);
+                    $userName = $user['name'] ?? ($user['username'] ?? $checkoutTo);
 
-                    activity_log_event('asset_checkout', 'Assets checked out from reservation', [
-                        'subject_type' => 'reservation',
-                        'subject_id'   => $selectedReservationId,
-                        'metadata'     => [
-                            'checked_out_to' => $userName,
-                            'assets'         => $assetTags,
-                            'note'           => $note,
-                        ],
-                    ]);
+                    if ($userId <= 0) {
+                        throw new Exception('Matched user has no valid ID.');
+                    }
 
-                    $checkoutAssets = [];
+                    // Attempt to check out each asset
+                    foreach ($checkoutAssets as $asset) {
+                        $assetId  = (int)$asset['id'];
+                        $assetTag = $asset['asset_tag'] ?? '';
+                        $modelId  = isset($asset['model_id']) ? (int)$asset['model_id'] : 0;
+
+                        // Re-check quotas before checkout
+                        if ($modelId > 0 && isset($modelLimits[$modelId])) {
+                            $allowed = $modelLimits[$modelId];
+                            $countForModel = 0;
+                            foreach ($checkoutAssets as $a2) {
+                                if ((int)($a2['model_id'] ?? 0) === $modelId) {
+                                    $countForModel++;
+                                }
+                            }
+                            if ($countForModel > $allowed) {
+                                throw new Exception("Too many assets of model {$asset['model']} for this reservation (allowed {$allowed}).");
+                            }
+                        } elseif ($modelId > 0 && $selectedStart && $selectedEnd) {
+                            if (model_booked_elsewhere($pdo, $modelId, $selectedStart, $selectedEnd, $selectedReservationId)) {
+                                throw new Exception("Model {$asset['model']} is booked in another reservation for this window.");
+                            }
+                        }
+
+                        try {
+                            // Pass expected end datetime to local inventory so time is preserved
+                            checkout_asset_to_user($assetId, $userId, $note, $selectedEnd);
+                            $checkoutMessages[] = "Checked out asset {$assetTag} to {$userName}.";
+                        } catch (Throwable $e) {
+                            $checkoutErrors[] = "Failed to check out {$assetTag}: " . $e->getMessage();
+                        }
+                    }
+
+                    // If no errors, clear the list
+                    if (empty($checkoutErrors)) {
+                        $assetTags = array_map(static function ($asset): string {
+                            $tag = $asset['asset_tag'] ?? '';
+                            $model = $asset['model'] ?? '';
+                            return $model !== '' ? ($tag . ' (' . $model . ')') : $tag;
+                        }, $checkoutAssets);
+
+                        activity_log_event('reservation_checked_out', 'Assets checked out from reservation', [
+                            'subject_type' => 'reservation',
+                            'subject_id'   => $selectedReservationId,
+                            'metadata'     => [
+                                'checked_out_to' => $userName,
+                                'assets'         => $assetTags,
+                                'note'           => $note,
+                            ],
+                        ]);
+
+                        $checkoutAssets = [];
+                    }
                 }
             } catch (Throwable $e) {
-                $checkoutErrors[] = 'Could not find user: ' . $e->getMessage();
+                $checkoutErrors[] = 'Could not find user in local inventory: ' . $e->getMessage();
             }
         }
     }
@@ -749,7 +803,7 @@ $active  = basename($_SERVER['PHP_SELF']);
         <div class="page-header">
             <h1>Today’s Reservations (Checkout)</h1>
             <div class="page-subtitle">
-                View today’s reservations and perform bulk checkouts.
+                View today’s reservations and perform bulk checkouts via local inventory.
             </div>
         </div>
 
@@ -789,8 +843,8 @@ $active  = basename($_SERVER['PHP_SELF']);
                         $resId   = (int)$res['id'];
                         $items   = get_reservation_items_with_names($pdo, $resId);
                         $summary = build_items_summary_text($items);
-                        $start   = uk_datetime_display($res['start_datetime'] ?? '');
-                        $end     = uk_datetime_display($res['end_datetime'] ?? '');
+                        $start   = display_datetime($res['start_datetime'] ?? '');
+                        $end     = display_datetime($res['end_datetime'] ?? '');
                                 ?>
                                 <option value="<?= $resId ?>" <?= $resId === $selectedReservationId ? 'selected' : '' ?>>
                                     #<?= $resId ?> – <?= h($res['user_name'] ?? '') ?> (<?= h($start) ?> → <?= h($end) ?>): <?= h($summary) ?>
@@ -807,7 +861,7 @@ $active  = basename($_SERVER['PHP_SELF']);
                 <?php if ($selectedReservation): ?>
                     <div class="mt-3 alert alert-info mb-0">
                         <div><strong>Selected:</strong> #<?= (int)$selectedReservation['id'] ?> – <?= h($selectedReservation['user_name'] ?? '') ?></div>
-                        <div>When: <?= h(uk_datetime_display($selectedReservation['start_datetime'] ?? '')) ?> → <?= h(uk_datetime_display($selectedReservation['end_datetime'] ?? '')) ?></div>
+                        <div>When: <?= h(display_datetime($selectedReservation['start_datetime'] ?? '')) ?> → <?= h(display_datetime($selectedReservation['end_datetime'] ?? '')) ?></div>
                         <?php if (!empty($selectedItems)): ?>
                             <div>Models &amp; quantities: <?= h(build_items_summary_text($selectedItems)) ?></div>
                         <?php else: ?>
@@ -819,17 +873,21 @@ $active  = basename($_SERVER['PHP_SELF']);
         </div>
 
         <!-- Feedback messages -->
-        <?php
-            if (!empty($_SESSION['checkout_flash_success'])) {
-                $checkoutMessages[] = (string)$_SESSION['checkout_flash_success'];
-                unset($_SESSION['checkout_flash_success']);
-            }
-        ?>
         <?php if (!empty($checkoutMessages)): ?>
             <div class="alert alert-success">
                 <ul class="mb-0">
                     <?php foreach ($checkoutMessages as $m): ?>
                         <li><?= h($m) ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        <?php endif; ?>
+
+        <?php if (!empty($checkoutWarnings)): ?>
+            <div class="alert alert-warning">
+                <ul class="mb-0">
+                    <?php foreach ($checkoutWarnings as $w): ?>
+                        <li><?= h($w) ?></li>
                     <?php endforeach; ?>
                 </ul>
             </div>
@@ -859,12 +917,21 @@ $active  = basename($_SERVER['PHP_SELF']);
                             <input type="hidden" name="<?= h($k) ?>" value="<?= h($v) ?>">
                         <?php endforeach; ?>
 
+                        <?php
+                            $reservationUserName = trim($selectedReservation['user_name'] ?? '');
+                            $reservationUserEmail = trim($selectedReservation['user_email'] ?? '');
+                            if ($reservationUserName !== '' && $reservationUserEmail !== '') {
+                                $reservationUserDisplay = $reservationUserName . ' (' . $reservationUserEmail . ')';
+                            } else {
+                                $reservationUserDisplay = $reservationUserEmail !== '' ? $reservationUserEmail : $reservationUserName;
+                            }
+                        ?>
                         <div class="row g-3 mb-3">
                             <div class="col-md-6">
                                 <label class="form-label">Check out to (reservation user)</label>
                                 <input type="text"
                                        class="form-control"
-                                       value="<?= h($selectedReservation['user_name'] ?? '') ?>"
+                                       value="<?= h($reservationUserDisplay) ?>"
                                        readonly>
                             </div>
                             <div class="col-md-6">
@@ -872,9 +939,32 @@ $active  = basename($_SERVER['PHP_SELF']);
                                 <input type="text"
                                        name="reservation_note"
                                        class="form-control"
-                                       placeholder="Optional note to store with checkout">
+                                       placeholder="Optional note to store with checkout"
+                                       value="<?= h($reservationNoteValue) ?>">
                             </div>
                         </div>
+
+                        <?php if (!empty($reservationUserCandidates)): ?>
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Select matching local inventory user</label>
+                                    <select name="reservation_user_id" class="form-select" required>
+                                        <option value="">-- Choose user --</option>
+                                        <?php foreach ($reservationUserCandidates as $candidate): ?>
+                                            <?php
+                                                $cid = (int)($candidate['id'] ?? 0);
+                                                $cEmail = $candidate['email'] ?? '';
+                                                $cName = $candidate['name'] ?? ($candidate['username'] ?? '');
+                                                $cLabel = $cName !== '' && $cEmail !== '' ? "{$cName} ({$cEmail})" : ($cName !== '' ? $cName : $cEmail);
+                                                $selectedAttr = $selectedReservationUserId === $cid ? 'selected' : '';
+                                            ?>
+                                            <option value="<?= $cid ?>" <?= $selectedAttr ?>><?= h($cLabel) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <div class="form-text">Multiple users matched the reservation user. Choose which account to use.</div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
 
                         <?php foreach ($selectedItems as $item): ?>
                             <?php
@@ -882,7 +972,9 @@ $active  = basename($_SERVER['PHP_SELF']);
                                 $qty     = (int)$item['qty'];
                                 $options = $modelAssets[$mid] ?? [];
                                 $imagePath = $item['image'] ?? '';
-                                $imageUrl = $imagePath !== '' ? $imagePath : '';
+                                $proxiedImage = $imagePath !== ''
+                                    ? 'image_proxy.php?src=' . urlencode($imagePath)
+                                    : '';
                             ?>
                             <div class="mb-3">
                                 <table class="table table-sm align-middle reservation-model-table">
@@ -890,8 +982,8 @@ $active  = basename($_SERVER['PHP_SELF']);
                                         <tr>
                                             <td class="reservation-model-cell">
                                                 <div class="reservation-model-header">
-                                                    <?php if ($imageUrl !== ''): ?>
-                                                        <img src="<?= h($imageUrl) ?>"
+                                                    <?php if ($proxiedImage !== ''): ?>
+                                                        <img src="<?= h($proxiedImage) ?>"
                                                              alt="<?= h($item['name'] ?? ('Model #' . $mid)) ?>"
                                                              class="reservation-model-image">
                                                     <?php else: ?>
@@ -919,7 +1011,7 @@ $active  = basename($_SERVER['PHP_SELF']);
                                             <td>
                                                 <?php if (empty($options)): ?>
                                                     <div class="alert alert-warning mb-0">
-                                                        No assets found in inventory for this model.
+                                                        No assets found in local inventory for this model.
                                                     </div>
                                                 <?php else: ?>
                                                     <div class="d-flex flex-column gap-2">

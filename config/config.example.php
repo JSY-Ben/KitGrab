@@ -41,6 +41,13 @@ return [
         'ldap_enabled' => true,
         'google_oauth_enabled' => false,
         'microsoft_oauth_enabled' => false,
+        // Optional role mappings for external auth providers
+        'admin_group_cn' => [],
+        'checkout_group_cn' => [],
+        'google_admin_emails' => [],
+        'google_checkout_emails' => [],
+        'microsoft_admin_emails' => [],
+        'microsoft_checkout_emails' => [],
     ],
 
     'google_oauth' => [
@@ -89,12 +96,39 @@ return [
         'debug'    => true,
         'logo_url' => 'kitgrab-logo.png', // optional: full URL or relative path to logo image
         'date_format' => 'd/m/Y', // display date format (PHP format string)
-        'time_format' => '24h', // 12h|24h display format for times
+        'time_format' => 'H:i', // see settings for supported formats
         'primary_color' => '#660000', // main UI colour for gradients/buttons
         'missed_cutoff_minutes' => 60, // minutes after start time before marking reservation as missed
         'overdue_staff_email' => '', // overdue report recipients (comma/newline separated)
         'overdue_staff_name'  => '', // optional names for recipients (comma/newline separated)
         'block_catalogue_overdue' => true, // block catalogue for users with overdue checkouts
+        'catalogue_cache_ttl' => 0, // in seconds; set 0 to disable
+        // Reservation controls
+        'reservation_notice_minutes' => 0,
+        'reservation_notice_bypass_checkout_staff' => false,
+        'reservation_notice_bypass_admins' => false,
+        'reservation_min_duration_minutes' => 0,
+        'reservation_max_duration_minutes' => 0,
+        'reservation_duration_bypass_checkout_staff' => false,
+        'reservation_duration_bypass_admins' => false,
+        'reservation_max_concurrent_reservations' => 0,
+        'reservation_concurrent_bypass_checkout_staff' => false,
+        'reservation_concurrent_bypass_admins' => false,
+        'reservation_blackout_slots' => [
+            // ['start' => '2026-03-01 09:00:00', 'end' => '2026-03-01 17:00:00', 'reason' => 'Maintenance'],
+        ],
+        'reservation_blackout_bypass_checkout_staff' => false,
+        'reservation_blackout_bypass_admins' => false,
+        // Timed catalogue announcements
+        'announcements' => [
+            // ['message' => 'Notice', 'start_datetime' => '2026-01-01 09:00:00', 'end_datetime' => '2026-01-01 17:00:00'],
+        ],
+        // Backward-compatible single announcement fields
+        'announcement_message' => '',
+        'announcement_start_ts' => 0,
+        'announcement_end_ts' => 0,
+        'announcement_start_datetime' => '',
+        'announcement_end_datetime' => '',
     ],
 
     'catalogue' => [

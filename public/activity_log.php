@@ -32,20 +32,11 @@ $eventLabels = [
     'reservation_cancelled' => 'Reservation Cancelled',
     'reservation_missed' => 'Reservation Missed',
     'reservation_restored' => 'Reservation Restored',
-    'reservation_checked_out' => 'Asset Checkout',
-    'quick_checkout' => 'Asset Checkout',
-    'asset_checkout' => 'Asset Checkout',
-    'quick_checkin' => 'Asset Checkin',
-    'asset_checked_in' => 'Asset Checkin',
-    'assets_checked_in' => 'Asset Checkin',
-    'asset_checkin' => 'Asset Checkin',
+    'reservation_checked_out' => 'Reservation Checked Out',
+    'quick_checkout' => 'Quick Checkout',
+    'quick_checkin' => 'Quick Checkin',
     'asset_renewed' => 'Asset Renewed',
     'assets_renewed' => 'Assets Renewed',
-];
-
-$eventTypeAliases = [
-    'asset_checkin' => ['asset_checkin', 'quick_checkin', 'asset_checked_in', 'assets_checked_in'],
-    'asset_checkout' => ['asset_checkout', 'quick_checkout', 'reservation_checked_out'],
 ];
 
 $metadataLabels = [
@@ -56,9 +47,6 @@ $metadataLabels = [
     'count' => 'Count',
     'cutoff_minutes' => 'Cutoff minutes',
     'note' => 'Note',
-    'notes' => 'Notes',
-    'user_id' => 'Checked in from',
-    'user_email' => 'Checked in from',
     'provider' => 'Provider',
     'start' => 'Start',
     'end' => 'End',
@@ -66,27 +54,10 @@ $metadataLabels = [
     'asset_id' => 'Asset ID',
     'asset_name' => 'Asset name',
     'items' => 'Items',
-    'user_id' => 'User',
 ];
-
-function canonical_event_type(?string $eventType, array $aliases): ?string
-{
-    if ($eventType === null || $eventType === '') {
-        return $eventType;
-    }
-    foreach ($aliases as $canonical => $group) {
-        if (in_array($eventType, $group, true)) {
-            return $canonical;
-        }
-    }
-    return $eventType;
-}
 
 function format_activity_metadata(?string $metadataJson, array $labelMap, ?DateTimeZone $tz = null): array
 {
-    global $pdo;
-    static $userCache = [];
-
     if (!$metadataJson) {
         return [];
     }
@@ -97,57 +68,9 @@ function format_activity_metadata(?string $metadataJson, array $labelMap, ?DateT
     }
 
     $lines = [];
-    $hasUserId = !empty($decoded['user_id']);
     foreach ($decoded as $key => $value) {
-        if ($key === 'notes' && is_array($value)) {
-            $noteLines = [];
-            foreach ($value as $noteRow) {
-                if (!is_array($noteRow)) {
-                    continue;
-                }
-                $label = trim((string)($noteRow['label'] ?? ''));
-                $note = trim((string)($noteRow['note'] ?? ''));
-                if ($label === '' && isset($noteRow['asset_id'])) {
-                    $label = 'Asset #' . (int)$noteRow['asset_id'];
-                }
-                if ($note === '') {
-                    continue;
-                }
-                $noteLines[] = $label !== '' ? ('- ' . $label . ': ' . $note) : ('- ' . $note);
-            }
-            if (!empty($noteLines)) {
-                $lines[] = 'Notes:';
-                $lines = array_merge($lines, $noteLines);
-            }
-            continue;
-        }
         $label = $labelMap[$key] ?? ucwords(str_replace('_', ' ', (string)$key));
-        if ($key === 'user_email' && $hasUserId) {
-            continue;
-        }
-        if ($key === 'user_id') {
-            $userId = (int)$value;
-            if ($userId > 0) {
-                if (!array_key_exists($userId, $userCache)) {
-                    $stmt = $pdo->prepare("SELECT first_name, last_name, email FROM users WHERE id = :id LIMIT 1");
-                    $stmt->execute([':id' => $userId]);
-                    $user = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-                    $name = trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''));
-                    $email = $user['email'] ?? '';
-                    $display = $name !== '' ? $name : '';
-                    if ($email !== '') {
-                        $display = $display !== '' ? ($display . ' <' . $email . '>') : $email;
-                    }
-                    if ($display === '') {
-                        $display = 'User #' . $userId;
-                    }
-                    $userCache[$userId] = $display;
-                }
-                $value = $userCache[$userId];
-            } else {
-                $value = '';
-            }
-        } elseif (is_array($value)) {
+        if (is_array($value)) {
             $value = implode(', ', array_map(static function ($item): string {
                 return is_scalar($item) ? (string)$item : json_encode($item, JSON_UNESCAPED_SLASHES);
             }, $value));
@@ -158,7 +81,11 @@ function format_activity_metadata(?string $metadataJson, array $labelMap, ?DateT
         } else {
             $value = (string)$value;
             if ($value !== '' && in_array($key, ['start', 'end', 'expected_checkin'], true)) {
-                $value = layout_format_datetime($value);
+                try {
+                    $value = app_format_datetime($value, null, $tz);
+                } catch (Throwable $e) {
+                    // Keep raw value on parse errors.
+                }
             }
         }
 
@@ -180,7 +107,7 @@ $perPageRaw = (int)($_GET['per_page'] ?? 25);
 $sortRaw = trim($_GET['sort'] ?? '');
 
 $q        = $qRaw !== '' ? $qRaw : null;
-$eventType = $eventRaw !== '' ? canonical_event_type($eventRaw, $eventTypeAliases) : null;
+$eventType = $eventRaw !== '' ? $eventRaw : null;
 $dateFrom = $fromRaw !== '' ? $fromRaw : null;
 $dateTo   = $toRaw !== '' ? $toRaw : null;
 $page     = $pageRaw > 0 ? $pageRaw : 1;
@@ -207,14 +134,7 @@ $totalPages = 1;
 $eventTypeOptions = [];
 try {
     $eventStmt = $pdo->query('SELECT DISTINCT event_type FROM activity_log ORDER BY event_type ASC');
-    $rawEventTypes = array_values(array_filter(array_map('trim', $eventStmt->fetchAll(PDO::FETCH_COLUMN))));
-    $eventTypeOptions = [];
-    foreach ($rawEventTypes as $type) {
-        $canonical = canonical_event_type($type, $eventTypeAliases);
-        if ($canonical !== '' && !in_array($canonical, $eventTypeOptions, true)) {
-            $eventTypeOptions[] = $canonical;
-        }
-    }
+    $eventTypeOptions = array_values(array_filter(array_map('trim', $eventStmt->fetchAll(PDO::FETCH_COLUMN))));
 
     $where  = [];
     $params = [];
@@ -225,18 +145,8 @@ try {
     }
 
     if ($eventType !== null) {
-        if (isset($eventTypeAliases[$eventType])) {
-            $placeholders = [];
-            foreach ($eventTypeAliases[$eventType] as $idx => $type) {
-                $key = ':event_type_' . $idx;
-                $placeholders[] = $key;
-                $params[$key] = $type;
-            }
-            $where[] = 'event_type IN (' . implode(',', $placeholders) . ')';
-        } else {
-            $where[] = 'event_type = :event_type';
-            $params[':event_type'] = $eventType;
-        }
+        $where[] = 'event_type = :event_type';
+        $params[':event_type'] = $eventType;
     }
 
     if ($dateFrom !== null) {
@@ -341,6 +251,12 @@ try {
             <li class="nav-item">
                 <a class="nav-link" href="settings.php">Settings</a>
             </li>
+            <li class="nav-item">
+                <a class="nav-link" href="announcements.php">Announcements</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="reports.php">Reports</a>
+            </li>
         </ul>
 
         <div class="card">
@@ -441,8 +357,7 @@ try {
                                     }
 
                                     $eventTypeValue = (string)($row['event_type'] ?? '');
-                                    $eventTypeLabelKey = canonical_event_type($eventTypeValue, $eventTypeAliases) ?? $eventTypeValue;
-                                    $eventLabel = $eventLabels[$eventTypeLabelKey] ?? ucwords(str_replace('_', ' ', $eventTypeLabelKey));
+                                    $eventLabel = $eventLabels[$eventTypeValue] ?? ucwords(str_replace('_', ' ', $eventTypeValue));
 
                                     $subjectLabel = trim((string)($row['subject_type'] ?? ''));
                                     $subjectId = trim((string)($row['subject_id'] ?? ''));
@@ -453,7 +368,14 @@ try {
                                     }
 
                                     $timestamp = (string)($row['created_at'] ?? '');
-                                    $displayTime = layout_format_datetime($timestamp);
+                                    $displayTime = $timestamp;
+                                    if ($timestamp !== '') {
+                                        try {
+                                            $displayTime = app_format_datetime($timestamp, null, $tz);
+                                        } catch (Throwable $e) {
+                                            $displayTime = $timestamp;
+                                        }
+                                    }
 
                                     $metadataText = trim((string)($row['metadata'] ?? ''));
                                     $metadataLines = format_activity_metadata($metadataText, $metadataLabels, $tz);
@@ -514,11 +436,40 @@ try {
                                     $prevUrl = 'activity_log.php?' . http_build_query($pagerQuery);
                                     $pagerQuery['page'] = $nextPage;
                                     $nextUrl = 'activity_log.php?' . http_build_query($pagerQuery);
+
+                                    $windowSize = 2; // show current page +/- 2
+                                    $rangeStart = max(1, $page - $windowSize);
+                                    $rangeEnd = min($totalPages, $page + $windowSize);
+
+                                    if ($rangeStart <= 3) {
+                                        $rangeStart = 1;
+                                        $rangeEnd = min($totalPages, 1 + ($windowSize * 2));
+                                    }
+                                    if ($rangeEnd >= ($totalPages - 2)) {
+                                        $rangeEnd = $totalPages;
+                                        $rangeStart = max(1, $totalPages - ($windowSize * 2));
+                                    }
                                 ?>
                                 <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
                                     <a class="page-link" href="<?= h($prevUrl) ?>">Previous</a>
                                 </li>
-                                <?php for ($p = 1; $p <= $totalPages; $p++): ?>
+
+                                <?php if ($rangeStart > 1): ?>
+                                    <?php
+                                        $pagerQuery['page'] = 1;
+                                        $firstUrl = 'activity_log.php?' . http_build_query($pagerQuery);
+                                    ?>
+                                    <li class="page-item <?= $page === 1 ? 'active' : '' ?>">
+                                        <a class="page-link" href="<?= h($firstUrl) ?>">1</a>
+                                    </li>
+                                    <?php if ($rangeStart > 2): ?>
+                                        <li class="page-item disabled">
+                                            <span class="page-link">&hellip;</span>
+                                        </li>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+
+                                <?php for ($p = $rangeStart; $p <= $rangeEnd; $p++): ?>
                                     <?php
                                         $pagerQuery['page'] = $p;
                                         $pageUrl = 'activity_log.php?' . http_build_query($pagerQuery);
@@ -527,6 +478,22 @@ try {
                                         <a class="page-link" href="<?= h($pageUrl) ?>"><?= $p ?></a>
                                     </li>
                                 <?php endfor; ?>
+
+                                <?php if ($rangeEnd < $totalPages): ?>
+                                    <?php if ($rangeEnd < ($totalPages - 1)): ?>
+                                        <li class="page-item disabled">
+                                            <span class="page-link">&hellip;</span>
+                                        </li>
+                                    <?php endif; ?>
+                                    <?php
+                                        $pagerQuery['page'] = $totalPages;
+                                        $lastUrl = 'activity_log.php?' . http_build_query($pagerQuery);
+                                    ?>
+                                    <li class="page-item <?= $page === $totalPages ? 'active' : '' ?>">
+                                        <a class="page-link" href="<?= h($lastUrl) ?>"><?= $totalPages ?></a>
+                                    </li>
+                                <?php endif; ?>
+
                                 <li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>">
                                     <a class="page-link" href="<?= h($nextUrl) ?>">Next</a>
                                 </li>

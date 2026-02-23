@@ -14,7 +14,7 @@ require_once __DIR__ . '/inventory_client.php';
  *   ]
  *
  * Assumes reservation_items has: reservation_id, model_id, quantity.
- * Uses local inventory model lookups to resolve names.
+ * Uses local inventory get_model($modelId) to resolve names.
  */
 function get_reservation_items_with_names(PDO $pdo, int $reservationId): array
 {
@@ -47,6 +47,7 @@ function get_reservation_items_with_names(PDO $pdo, int $reservationId): array
 
         if (!isset($modelCache[$modelId])) {
             try {
+                // Uses local inventory API client function we already have
                 $modelCache[$modelId] = get_model($modelId);
             } catch (Exception $e) {
                 $modelCache[$modelId] = null;
