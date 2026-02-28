@@ -2478,10 +2478,20 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             })
                 .then(function (response) {
+                    if (response.redirected && response.url) {
+                        window.location.href = response.url;
+                        return null;
+                    }
+
                     const ct = response.headers.get('Content-Type') || '';
                     if (ct.indexOf('application/json') !== -1) {
                         return response.json();
                     }
+
+                    if (ct.indexOf('text/html') !== -1) {
+                        window.location.href = 'login.php';
+                    }
+
                     return null;
                 })
                 .then(function (data) {
