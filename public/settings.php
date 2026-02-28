@@ -752,7 +752,9 @@ if (empty($reservationBlackoutRows)) {
 }
 
 $settingsTabRaw = strtolower(trim((string)($_POST['settings_tab'] ?? $_GET['settings_tab'] ?? 'frontend')));
-$settingsTab = $settingsTabRaw === 'backend' ? 'backend' : 'frontend';
+$settingsTab = in_array($settingsTabRaw, ['frontend', 'backend', 'notifications'], true)
+    ? $settingsTabRaw
+    : 'frontend';
 $selectedTimezone = (string)$cfg(['app', 'timezone'], 'Europe/Jersey');
 if (!in_array($selectedTimezone, $timezoneOptions, true)) {
     $selectedTimezone = 'Europe/Jersey';
@@ -848,6 +850,14 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                 data-settings-tab="backend"
                                 aria-selected="<?= $settingsTab === 'backend' ? 'true' : 'false' ?>">
                             Backend Settings
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button type="button"
+                                class="nav-link <?= $settingsTab === 'notifications' ? 'active' : '' ?>"
+                                data-settings-tab="notifications"
+                                aria-selected="<?= $settingsTab === 'notifications' ? 'true' : 'false' ?>">
+                            Notifications
                         </button>
                     </li>
                 </ul>
@@ -1113,7 +1123,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                 </div>
             </div>
 
-            <div class="col-12<?= $settingsTab === 'backend' ? '' : ' d-none' ?>" data-settings-group="backend">
+            <div class="col-12<?= $settingsTab === 'notifications' ? '' : ' d-none' ?>" data-settings-group="notifications">
                 <div class="card">
                     <div class="card-body">
                         <h5 class="card-title mb-1">Notifications</h5>
@@ -1828,7 +1838,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
     const settingsTabInput = document.getElementById('settings_tab_input');
     const settingsTabs = Array.from(document.querySelectorAll('#settings-group-tabs [data-settings-tab]'));
     const settingsSections = Array.from(form.querySelectorAll('[data-settings-group]'));
-    const settingsTabAllowed = new Set(['frontend', 'backend']);
+    const settingsTabAllowed = new Set(['frontend', 'backend', 'notifications']);
 
     const applySettingsTab = (tabName) => {
         const nextTab = settingsTabAllowed.has(tabName) ? tabName : 'frontend';
