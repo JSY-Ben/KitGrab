@@ -101,6 +101,28 @@ return [
         'missed_cutoff_minutes' => 60, // minutes after start time before marking reservation as missed
         'overdue_staff_email' => '', // overdue report recipients (comma/newline separated)
         'overdue_staff_name'  => '', // optional names for recipients (comma/newline separated)
+        'notification_reservation_submitted_enabled' => true, // new reservation submitted email notifications
+        'notification_reservation_submitted_send_user' => true, // include reservation user for submitted notifications
+        'notification_reservation_submitted_send_checkout_users' => true, // include checkout users for submitted notifications
+        'notification_reservation_submitted_send_admins' => true, // include administrators for submitted notifications
+        'notification_reservation_submitted_extra_emails' => '', // extra recipients for reservation submitted emails
+        'notification_quick_checkout_enabled' => true, // quick checkout email notifications
+        'notification_quick_checkout_send_user' => true, // include checked-out user for quick checkout notifications
+        'notification_quick_checkout_send_staff' => true, // include staff member who performed quick checkout notifications
+        'notification_quick_checkout_extra_emails' => '', // extra recipients for quick checkout emails
+        'notification_staff_checkout_enabled' => true, // reservation checkout email notifications
+        'notification_staff_checkout_send_user' => true, // include reservation user for reservation checkout notifications
+        'notification_staff_checkout_send_staff' => true, // include staff member for reservation checkout notifications
+        'notification_staff_checkout_extra_emails' => '', // extra recipients for reservation checkout emails
+        'notification_quick_checkin_enabled' => true, // quick check-in email notifications
+        'notification_quick_checkin_send_user' => true, // include affected user(s) for quick check-in notifications
+        'notification_quick_checkin_send_staff' => true, // include staff member for quick check-in notifications
+        'notification_quick_checkin_extra_emails' => '', // extra recipients for quick check-in emails
+        'notification_mark_missed_enabled' => false, // cron_mark_missed email notifications
+        'notification_mark_missed_send_user' => true, // include reservation user in missed notifications
+        'notification_mark_missed_send_checkout_users' => false, // include checkout users for missed notifications
+        'notification_mark_missed_send_admins' => false, // include administrators for missed notifications
+        'notification_mark_missed_extra_emails' => '', // extra recipients for missed reservation emails
         'block_catalogue_overdue' => true, // block catalogue for users with overdue checkouts
         'catalogue_cache_ttl' => 0, // in seconds; set 0 to disable
         // Reservation controls
@@ -135,6 +157,8 @@ return [
         // Restrict which categories appear in the catalogue filter.
         // Leave empty to show all categories.
         'allowed_categories' => [],
+        // Allow non-logged-in users to view Dashboard/Catalogue.
+        'allow_public_view' => false,
     ],
 
     'smtp' => [

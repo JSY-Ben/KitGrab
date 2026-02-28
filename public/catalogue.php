@@ -9,11 +9,12 @@ $config   = load_config();
 $authCfg  = $config['auth'] ?? [];
 $isAdmin  = !empty($currentUser['is_admin']);
 $isStaff  = !empty($currentUser['is_staff']) || $isAdmin;
+$isAuthenticated = isset($isAuthenticated) ? (bool)$isAuthenticated : !empty($currentUser['email']);
 $ldapEnabled = array_key_exists('ldap_enabled', $authCfg) ? !empty($authCfg['ldap_enabled']) : true;
 $googleEnabled = !empty($authCfg['google_oauth_enabled']);
 $msEnabled     = !empty($authCfg['microsoft_oauth_enabled']);
 
-$bookingOverride = $_SESSION['booking_user_override'] ?? null;
+$bookingOverride = $isAuthenticated ? ($_SESSION['booking_user_override'] ?? null) : null;
 $activeUser      = $bookingOverride ?: $currentUser;
 
 $ldapCfg  = $config['ldap'] ?? [];
@@ -81,12 +82,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['prefetch']) && !isset(
 
 if (($_GET['ajax'] ?? '') === 'overdue_check') {
     header('Content-Type: application/json');
-    if (!$blockCatalogueOverdue) {
+    if (!$isAuthenticated || !$blockCatalogueOverdue) {
         echo json_encode(['blocked' => false, 'assets' => []]);
         exit;
     }
 
-    $bookingOverride = $_SESSION['booking_user_override'] ?? null;
+    $bookingOverride = $isAuthenticated ? ($_SESSION['booking_user_override'] ?? null) : null;
     $activeUser      = $bookingOverride ?: $currentUser;
 
     $activeUserEmail = trim($activeUser['email'] ?? '');
@@ -873,7 +874,7 @@ foreach ($basket as $qty) {
 $overdueAssets = [];
 $overdueErr = '';
 $catalogueBlocked = false;
-$skipOverdueCheck = !$blockCatalogueOverdue;
+$skipOverdueCheck = !$isAuthenticated || !$blockCatalogueOverdue;
 $activeUserEmail = trim($activeUser['email'] ?? '');
 $activeUserUsername = trim($activeUser['username'] ?? '');
 $activeUserDisplay = trim($activeUser['display_name'] ?? '');
@@ -1007,7 +1008,7 @@ $checkedOutCounts = [];
     <?= layout_theme_styles() ?>
 </head>
 <body class="p-4"
-      data-catalogue-overdue="<?= $blockCatalogueOverdue ? '1' : '0' ?>"
+      data-catalogue-overdue="<?= ($isAuthenticated && $blockCatalogueOverdue) ? '1' : '0' ?>"
       data-date-format="<?= h(app_get_date_format()) ?>"
       data-time-format="<?= h(app_get_time_format()) ?>">
 <div id="catalogue-loading" class="loading-overlay" aria-live="polite" aria-busy="true">
@@ -1110,9 +1111,9 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
         </div>
 
         <!-- App navigation -->
-        <?= layout_render_nav($active, $isStaff, $isAdmin) ?>
+        <?= layout_render_nav($active, $isStaff, $isAdmin, $isAuthenticated) ?>
 
-        <?php if ($blockCatalogueOverdue): ?>
+        <?php if ($isAuthenticated && $blockCatalogueOverdue): ?>
             <div id="overdue-warning" class="alert alert-warning<?= $overdueErr ? '' : ' d-none' ?>">
                 <?= h($overdueErr) ?>
             </div>
@@ -1120,20 +1121,33 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
 
         <!-- Top bar -->
         <div class="top-bar mb-3">
-            <div class="top-bar-user">
-                Logged in as:
-                <strong><?= htmlspecialchars(trim($currentUser['first_name'] . ' ' . $currentUser['last_name'])) ?></strong>
-                (<?= htmlspecialchars($currentUser['email']) ?>)
-            </div>
-            <div class="top-bar-actions d-flex gap-2">
-                <a href="basket.php"
-                   class="btn btn-lg btn-primary fw-semibold shadow-sm px-4"
-                   style="font-size:16px;"
-                   id="view-basket-btn">
-                    View basket<?= $basketCount > 0 ? ' (' . $basketCount . ')' : '' ?>
-                </a>
-                <a href="logout.php" class="btn btn-link btn-sm">Log out</a>
-            </div>
+            <?php if ($isAuthenticated): ?>
+                <div class="top-bar-user">
+                    Logged in as:
+                    <strong><?= htmlspecialchars(trim((string)$currentUser['first_name'] . ' ' . (string)$currentUser['last_name'])) ?></strong>
+                    (<?= htmlspecialchars((string)$currentUser['email']) ?>)
+                </div>
+                <div class="top-bar-actions d-flex gap-2">
+                    <a href="basket.php"
+                       class="btn btn-lg btn-primary fw-semibold shadow-sm px-4"
+                       style="font-size:16px;"
+                       id="view-basket-btn">
+                        View basket<?= $basketCount > 0 ? ' (' . $basketCount . ')' : '' ?>
+                    </a>
+                    <a href="logout.php" class="btn btn-link btn-sm">Log out</a>
+                </div>
+            <?php else: ?>
+                <div class="top-bar-user">
+                    Browsing as <strong>Guest</strong>. Booking actions will take you to login.
+                </div>
+                <div class="top-bar-actions d-flex gap-2">
+                    <a href="login.php"
+                       class="btn btn-lg btn-primary fw-semibold shadow-sm px-4"
+                       style="font-size:16px;">
+                        View basket
+                    </a>
+                </div>
+            <?php endif; ?>
         </div>
 
         <?php if ($isStaff): ?>
@@ -1165,7 +1179,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
             </div>
         <?php endif; ?>
 
-        <?php if ($blockCatalogueOverdue): ?>
+        <?php if ($isAuthenticated && $blockCatalogueOverdue): ?>
             <div id="overdue-alert" class="alert alert-danger<?= $catalogueBlocked ? '' : ' d-none' ?>">
                 <div class="fw-semibold mb-2">Catalogue unavailable</div>
                 <div class="mb-2">

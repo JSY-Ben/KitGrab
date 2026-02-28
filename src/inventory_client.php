@@ -114,7 +114,7 @@ function get_bookable_models(
     $cacheTtl = 0;
     try {
         $config = load_config();
-        $cacheTtl = (int)($config['app']['catalogue_cache_ttl'] ?? 0);
+        $cacheTtl = (int)($config['app']['catalogue_cache_ttl'] ?? ($config['app']['api_cache_ttl_seconds'] ?? 0));
     } catch (Throwable $e) {
         $cacheTtl = 0;
     }

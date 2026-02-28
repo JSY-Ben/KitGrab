@@ -28,6 +28,26 @@ if (!function_exists('layout_cached_config')) {
     }
 }
 
+if (!function_exists('layout_default_app_name')) {
+    function layout_default_app_name(): string
+    {
+        return 'KitGrab';
+    }
+}
+
+if (!function_exists('layout_app_name')) {
+    function layout_app_name(?array $cfg = null): string
+    {
+        $config = layout_cached_config($cfg);
+        $name = trim((string)($config['app']['name'] ?? ''));
+        if ($name === '') {
+            return layout_default_app_name();
+        }
+
+        return $name;
+    }
+}
+
 // Backward-compatible wrappers retained for pages that still call legacy
 // layout_* date formatting helpers.
 if (!function_exists('layout_date_format')) {
@@ -219,19 +239,26 @@ CSS;
 
 if (!function_exists('layout_render_nav')) {
     /**
-     * Render the main app navigation. Highlights the active page and hides staff-only items for non-staff users.
+     * Render the main app navigation. Guests only see public pages.
      */
-    function layout_render_nav(string $active, bool $isStaff, bool $isAdmin = false): string
+    function layout_render_nav(string $active, bool $isStaff, bool $isAdmin = false, bool $isAuthenticated = true): string
     {
-        $links = [
-            ['href' => 'index.php',          'label' => 'Dashboard',           'staff' => false],
-            ['href' => 'catalogue.php',      'label' => 'Catalogue',           'staff' => false],
-            ['href' => 'my_bookings.php',    'label' => 'My Reservations',     'staff' => false],
-            ['href' => 'reservations.php',   'label' => 'Reservations',        'staff' => true],
-            ['href' => 'quick_checkout.php', 'label' => 'Quick Checkout',      'staff' => true],
-            ['href' => 'quick_checkin.php',  'label' => 'Quick Checkin',       'staff' => true],
-            ['href' => 'activity_log.php',   'label' => 'Admin',               'staff' => false, 'admin_only' => true],
-        ];
+        if (!$isAuthenticated) {
+            $links = [
+                ['href' => 'index.php',     'label' => 'Dashboard', 'staff' => false],
+                ['href' => 'catalogue.php', 'label' => 'Catalogue', 'staff' => false],
+            ];
+        } else {
+            $links = [
+                ['href' => 'index.php',          'label' => 'Dashboard',           'staff' => false],
+                ['href' => 'catalogue.php',      'label' => 'Catalogue',           'staff' => false],
+                ['href' => 'my_bookings.php',    'label' => 'My Reservations',     'staff' => false],
+                ['href' => 'reservations.php',   'label' => 'Reservations',        'staff' => true],
+                ['href' => 'quick_checkout.php', 'label' => 'Quick Checkout',      'staff' => true],
+                ['href' => 'quick_checkin.php',  'label' => 'Quick Checkin',       'staff' => true],
+                ['href' => 'activity_log.php',   'label' => 'Admin',               'staff' => false, 'admin_only' => true],
+            ];
+        }
 
         $html = '<nav class="app-nav">';
         foreach ($links as $link) {
@@ -505,10 +532,7 @@ if (!function_exists('layout_footer')) {
 </script>
 SCRIPT;
         $cfg = layout_cached_config();
-        $appName = trim((string)($cfg['app']['name'] ?? 'KitGrab'));
-        if ($appName === '') {
-            $appName = 'KitGrab';
-        }
+        $appName = layout_app_name($cfg);
         $appNameEsc = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
 
         echo '<footer class="text-center text-muted mt-4 small">'
@@ -553,11 +577,7 @@ if (!function_exists('layout_logo_tag')) {
         }
 
         $urlEsc = htmlspecialchars($logoUrl, ENT_QUOTES, 'UTF-8');
-        $appName = trim((string)($cfg['app']['name'] ?? 'KitGrab'));
-        if ($appName === '') {
-            $appName = 'KitGrab';
-        }
-        $appNameEsc = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
+        $appNameEsc = htmlspecialchars(layout_app_name($cfg), ENT_QUOTES, 'UTF-8');
         return '<div class="app-logo text-center mb-3">'
             . '<a href="index.php" aria-label="Go to dashboard">'
             . '<img src="' . $urlEsc . '" alt="' . $appNameEsc . ' logo" style="max-height:80px; width:auto; height:auto; max-width:100%; object-fit:contain;">'
