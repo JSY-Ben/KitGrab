@@ -530,6 +530,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     $catalogue['allowed_categories'] = $allowedCategories;
+    $catalogue['show_available_locations'] = isset($_POST['catalogue_show_available_locations']);
     $catalogue['allow_public_view'] = isset($_POST['catalogue_allow_public_view']);
 
     $smtp = $config['smtp'] ?? [];
@@ -1336,6 +1337,17 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                 <label class="form-label">Catalogue cache TTL (seconds)</label>
                                 <input type="number" name="app_catalogue_cache_ttl" class="form-control" min="0" value="<?= (int)$cfg(['app', 'catalogue_cache_ttl'], $cfg(['app', 'api_cache_ttl_seconds'], 0)) ?>">
                                 <div class="form-text">Cache local inventory catalogue lookups. Set 0 to disable.</div>
+                            </div>
+                            <div class="col-12">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="catalogue_show_available_locations" id="catalogue_show_available_locations" <?= $cfg(['catalogue', 'show_available_locations'], false) ? 'checked' : '' ?>>
+                                    <label class="form-check-label fw-semibold" for="catalogue_show_available_locations">
+                                        Display Asset Location Availability on Catalogue
+                                    </label>
+                                </div>
+                                <div class="form-text">
+                                    Shows a per-location availability line on catalogue model cards using each asset&apos;s Location field.
+                                </div>
                             </div>
                             <div class="col-12">
                                 <div class="form-check form-switch">

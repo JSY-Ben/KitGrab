@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/inventory_schema.php';
 
 function inventory_map_model_row(array $row): array
 {
@@ -40,6 +41,7 @@ function inventory_map_asset_row(array $row): array
         'id' => (int)($row['asset_id'] ?? ($row['id'] ?? 0)),
         'asset_tag' => $row['asset_tag'] ?? '',
         'name' => $row['asset_name'] ?? ($row['name'] ?? ''),
+        'location' => trim((string)($row['location'] ?? '')),
         'model_id' => (int)($row['model_id'] ?? 0),
         'status' => $row['status'] ?? '',
         'requestable' => $isRequestable,
@@ -284,11 +286,13 @@ function get_model(int $modelId): array
 function get_asset(int $assetId): array
 {
     global $pdo;
+    $locationSelect = inventory_asset_location_select_sql($pdo, 'a');
     $stmt = $pdo->prepare("
         SELECT
             a.id AS asset_id,
             a.asset_tag,
             a.name AS asset_name,
+            {$locationSelect},
             a.model_id,
             a.status,
             m.name AS model_name,
@@ -317,11 +321,13 @@ function find_asset_by_tag(string $tag): array
         throw new Exception('Asset tag is required.');
     }
 
+    $locationSelect = inventory_asset_location_select_sql($pdo, 'a');
     $stmt = $pdo->prepare("
         SELECT
             a.id AS asset_id,
             a.asset_tag,
             a.name AS asset_name,
+            {$locationSelect},
             a.model_id,
             a.status,
             m.name AS model_name,
@@ -357,6 +363,9 @@ function search_assets(string $query, int $limit = 20, bool $requestableOnly = f
     $where = [
         '(a.asset_tag LIKE :q OR a.name LIKE :q OR m.name LIKE :q)',
     ];
+    if (inventory_asset_location_column_exists($pdo)) {
+        $where[0] = '(a.asset_tag LIKE :q OR a.name LIKE :q OR a.location LIKE :q OR m.name LIKE :q)';
+    }
     if ($requestableOnly) {
         $where[] = "a.status IN ('available','checked_out')";
     }
@@ -364,11 +373,13 @@ function search_assets(string $query, int $limit = 20, bool $requestableOnly = f
         ':q' => '%' . $q . '%',
     ];
 
+    $locationSelect = inventory_asset_location_select_sql($pdo, 'a');
     $stmt = $pdo->prepare("
         SELECT
             a.id AS asset_id,
             a.asset_tag,
             a.name AS asset_name,
+            {$locationSelect},
             a.model_id,
             a.status,
             m.name AS model_name,
@@ -403,11 +414,13 @@ function search_assets(string $query, int $limit = 20, bool $requestableOnly = f
 function list_assets_by_model(int $modelId, int $maxResults = 300): array
 {
     global $pdo;
+    $locationSelect = inventory_asset_location_select_sql($pdo, 'a');
     $stmt = $pdo->prepare("
         SELECT
             a.id AS asset_id,
             a.asset_tag,
             a.name AS asset_name,
+            {$locationSelect},
             a.model_id,
             a.status,
             m.name AS model_name,

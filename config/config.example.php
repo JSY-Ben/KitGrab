@@ -157,6 +157,8 @@ return [
         // Restrict which categories appear in the catalogue filter.
         // Leave empty to show all categories.
         'allowed_categories' => [],
+        // Show a per-location availability summary on catalogue cards.
+        'show_available_locations' => false,
         // Allow non-logged-in users to view Dashboard/Catalogue.
         'allow_public_view' => false,
     ],

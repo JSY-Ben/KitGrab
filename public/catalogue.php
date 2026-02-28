@@ -1,11 +1,13 @@
 <?php
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once SRC_PATH . '/auth.php';
-require_once SRC_PATH . '/inventory_client.php';
+require_once SRC_PATH . '/inventory_schema.php';
 require_once SRC_PATH . '/db.php';
+require_once SRC_PATH . '/inventory_client.php';
 require_once SRC_PATH . '/layout.php';
 
 $config   = load_config();
+$catalogueCfg = $config['catalogue'] ?? [];
 $authCfg  = $config['auth'] ?? [];
 $isAdmin  = !empty($currentUser['is_admin']);
 $isStaff  = !empty($currentUser['is_staff']) || $isAdmin;
@@ -19,6 +21,8 @@ $activeUser      = $bookingOverride ?: $currentUser;
 
 $ldapCfg  = $config['ldap'] ?? [];
 $appCfg   = $config['app'] ?? [];
+$showAvailableLocations = !empty($catalogueCfg['show_available_locations'])
+    && inventory_asset_location_column_exists($pdo);
 $debugOn  = !empty($appCfg['debug']);
 $blockCatalogueOverdue = array_key_exists('block_catalogue_overdue', $appCfg)
     ? !empty($appCfg['block_catalogue_overdue'])
@@ -676,6 +680,104 @@ function normalize_model_notes_text($notes): string
     return trim($plain);
 }
 
+function extract_asset_location_name(array $asset): string
+{
+    $locationName = trim((string)($asset['location'] ?? ''));
+    if ($locationName !== '') {
+        return $locationName;
+    }
+
+    return 'No location set';
+}
+
+function subtract_units_from_location_counts(array $locationCounts, int $units): array
+{
+    $units = max(0, $units);
+    if ($units === 0 || empty($locationCounts)) {
+        return $locationCounts;
+    }
+
+    while ($units > 0) {
+        $selectedLocation = '';
+        $selectedCount = 0;
+
+        foreach ($locationCounts as $locationName => $count) {
+            $count = (int)$count;
+            if ($count <= 0) {
+                continue;
+            }
+
+            if ($count > $selectedCount) {
+                $selectedLocation = (string)$locationName;
+                $selectedCount = $count;
+                continue;
+            }
+
+            if (
+                $count === $selectedCount
+                && $selectedLocation !== ''
+                && strcasecmp((string)$locationName, $selectedLocation) < 0
+            ) {
+                $selectedLocation = (string)$locationName;
+            }
+        }
+
+        if ($selectedLocation === '' || $selectedCount <= 0) {
+            break;
+        }
+
+        $take = min($selectedCount, $units);
+        $locationCounts[$selectedLocation] = $selectedCount - $take;
+        $units -= $take;
+    }
+
+    foreach ($locationCounts as $locationName => $count) {
+        if ((int)$count <= 0) {
+            unset($locationCounts[$locationName]);
+        }
+    }
+
+    return $locationCounts;
+}
+
+function format_location_availability_summary(array $locationCounts): string
+{
+    $entries = [];
+    foreach ($locationCounts as $locationName => $count) {
+        $count = (int)$count;
+        $locationName = trim((string)$locationName);
+        if ($count <= 0 || $locationName === '') {
+            continue;
+        }
+
+        $entries[] = [
+            'location' => $locationName,
+            'count' => $count,
+        ];
+    }
+
+    if (empty($entries)) {
+        return '';
+    }
+
+    usort($entries, static function (array $a, array $b): int {
+        $countCmp = ((int)$b['count']) <=> ((int)$a['count']);
+        if ($countCmp !== 0) {
+            return $countCmp;
+        }
+
+        return strcasecmp((string)$a['location'], (string)$b['location']);
+    });
+
+    $parts = [];
+    foreach ($entries as $entry) {
+        $locationSafe = htmlspecialchars((string)$entry['location'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $parts[] = (int)$entry['count'] . ' in <strong>' . $locationSafe . '</strong>';
+    }
+
+    return '(' . implode(', ', $parts) . ')';
+}
+
 function fetch_catalogue_model_bookings(PDO $pdo, int $modelId, array $assetIds): array
 {
     $allowedStatuses = ['pending', 'confirmed', 'completed', 'missed'];
@@ -994,6 +1096,7 @@ $nowIso      = date('Y-m-d H:i:s');
 $windowStartIso = $windowActive ? date('Y-m-d H:i:s', $windowStartTs) : '';
 $windowEndIso   = $windowActive ? date('Y-m-d H:i:s', $windowEndTs) : '';
 $checkedOutCounts = [];
+$checkedOutAssetIdsByModel = [];
 ?>
 <!DOCTYPE html>
 <html>
@@ -1075,20 +1178,61 @@ try {
 
 if (!empty($models)) {
     try {
-        $stmt = $pdo->query("
-            SELECT model_id, COUNT(*) AS cnt
-              FROM checked_out_asset_cache
-             GROUP BY model_id
-        ");
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($rows as $row) {
-            $mid = (int)($row['model_id'] ?? 0);
+        $pageModelIds = [];
+        foreach ($models as $rowModel) {
+            $mid = (int)($rowModel['id'] ?? 0);
             if ($mid > 0) {
-                $checkedOutCounts[$mid] = (int)($row['cnt'] ?? 0);
+                $pageModelIds[$mid] = true;
+            }
+        }
+
+        if (!empty($pageModelIds)) {
+            $modelIdChunks = array_chunk(array_keys($pageModelIds), 250);
+            foreach ($modelIdChunks as $chunk) {
+                $placeholders = implode(',', array_fill(0, count($chunk), '?'));
+                if ($showAvailableLocations) {
+                    $stmt = $pdo->prepare("
+                        SELECT model_id, asset_id
+                          FROM checked_out_asset_cache
+                         WHERE model_id IN ({$placeholders})
+                    ");
+                    $stmt->execute($chunk);
+                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+                    foreach ($rows as $row) {
+                        $mid = (int)($row['model_id'] ?? 0);
+                        $assetId = (int)($row['asset_id'] ?? 0);
+                        if ($mid <= 0) {
+                            continue;
+                        }
+
+                        $checkedOutCounts[$mid] = ($checkedOutCounts[$mid] ?? 0) + 1;
+                        if ($assetId > 0) {
+                            $checkedOutAssetIdsByModel[$mid][$assetId] = true;
+                        }
+                    }
+                } else {
+                    $stmt = $pdo->prepare("
+                        SELECT model_id, COUNT(*) AS cnt
+                          FROM checked_out_asset_cache
+                         WHERE model_id IN ({$placeholders})
+                         GROUP BY model_id
+                    ");
+                    $stmt->execute($chunk);
+                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+                    foreach ($rows as $row) {
+                        $mid = (int)($row['model_id'] ?? 0);
+                        if ($mid > 0) {
+                            $checkedOutCounts[$mid] = (int)($row['cnt'] ?? 0);
+                        }
+                    }
+                }
             }
         }
     } catch (Throwable $e) {
         $checkedOutCounts = [];
+        $checkedOutAssetIdsByModel = [];
     }
 }
 
@@ -1337,8 +1481,35 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                     $freeNow     = 0;
                     $maxQty      = 0;
                     $isRequestable = false;
+                    $locationAvailabilitySummary = '';
                     try {
-                        $assetCount = count_requestable_assets_by_model($modelId);
+                        $requestableLocationCounts = [];
+                        $requestableAssetLocationById = [];
+                        if ($showAvailableLocations) {
+                            $assetsCount = isset($model['assets_count']) && is_numeric($model['assets_count'])
+                                ? (int)$model['assets_count']
+                                : 0;
+                            $assetLookupLimit = min(500, max(100, $assetsCount + 25));
+                            $assets = list_assets_by_model($modelId, $assetLookupLimit);
+                            $assetCount = 0;
+
+                            foreach ($assets as $asset) {
+                                if (empty($asset['requestable'])) {
+                                    continue;
+                                }
+
+                                $assetCount++;
+                                $locationName = extract_asset_location_name($asset);
+                                $requestableLocationCounts[$locationName] = ($requestableLocationCounts[$locationName] ?? 0) + 1;
+
+                                $assetId = (int)($asset['id'] ?? 0);
+                                if ($assetId > 0) {
+                                    $requestableAssetLocationById[$assetId] = $locationName;
+                                }
+                            }
+                        } else {
+                            $assetCount = count_requestable_assets_by_model($modelId);
+                        }
 
                         if ($windowActive) {
                             $stmt = $pdo->prepare("
@@ -1388,11 +1559,64 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                         $freeNow = max(0, $assetCount - $booked);
                         $maxQty = $freeNow;
                         $isRequestable = $assetCount > 0;
+
+                        if ($showAvailableLocations && $freeNow > 0 && !empty($requestableLocationCounts)) {
+                            $availableLocationCounts = $requestableLocationCounts;
+                            $matchedCheckedOutAssets = 0;
+                            $checkedOutAssetIds = $checkedOutAssetIdsByModel[$modelId] ?? [];
+
+                            if (!empty($checkedOutAssetIds) && !empty($requestableAssetLocationById)) {
+                                foreach ($checkedOutAssetIds as $checkedOutAssetId => $_flag) {
+                                    $checkedOutAssetId = (int)$checkedOutAssetId;
+                                    if ($checkedOutAssetId <= 0) {
+                                        continue;
+                                    }
+
+                                    if (!isset($requestableAssetLocationById[$checkedOutAssetId])) {
+                                        continue;
+                                    }
+
+                                    $locationName = $requestableAssetLocationById[$checkedOutAssetId];
+                                    if (($availableLocationCounts[$locationName] ?? 0) <= 0) {
+                                        continue;
+                                    }
+
+                                    $availableLocationCounts[$locationName]--;
+                                    $matchedCheckedOutAssets++;
+                                }
+                            }
+
+                            $remainingCheckedOut = max(0, $activeCheckedOut - $matchedCheckedOutAssets);
+                            if ($remainingCheckedOut > 0) {
+                                $availableLocationCounts = subtract_units_from_location_counts(
+                                    $availableLocationCounts,
+                                    $remainingCheckedOut
+                                );
+                            }
+
+                            if ($pendingQty > 0) {
+                                $availableLocationCounts = subtract_units_from_location_counts(
+                                    $availableLocationCounts,
+                                    $pendingQty
+                                );
+                            }
+
+                            $remainingByLocation = array_sum($availableLocationCounts);
+                            if ($remainingByLocation > $freeNow) {
+                                $availableLocationCounts = subtract_units_from_location_counts(
+                                    $availableLocationCounts,
+                                    $remainingByLocation - $freeNow
+                                );
+                            }
+
+                            $locationAvailabilitySummary = format_location_availability_summary($availableLocationCounts);
+                        }
                     } catch (Throwable $e) {
                         $assetCount = $assetCount ?? 0;
                         $freeNow    = 0;
                         $maxQty     = 0;
                         $isRequestable = $assetCount > 0;
+                        $locationAvailabilitySummary = '';
                     }
                     $notes      = $model['notes'] ?? '';
                     if (is_array($notes)) {
@@ -1437,6 +1661,9 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                                         <span><strong>Requestable units:</strong> <?= $assetCount ?></span><br>
                                     <?php endif; ?>
                                     <span><strong><?= $windowActive ? 'Available for selected dates:' : 'Available now:' ?></strong> <?= $freeNow ?></span>
+                                    <?php if ($locationAvailabilitySummary !== ''): ?>
+                                        <span class="model-location-summary d-block"><?= $locationAvailabilitySummary ?></span>
+                                    <?php endif; ?>
                                     <?php if (!empty($notes)): ?>
                                         <div class="mt-2 text-muted clamp-3">
                                             <?= label_safe($notes) ?>

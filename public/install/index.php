@@ -41,8 +41,11 @@ $installed = is_file($configPath) || is_file($legacyConfigPath);
             </div>
             <div class="card">
                 <div class="card-body">
-                    <p class="mb-3">If you need to reinstall, run the installer again.</p>
-                    <a class="btn btn-outline-danger" href="install.php">Run installer again</a>
+                    <p class="mb-3">If you need to change the database schema or reinstall, use the tools below.</p>
+                    <div class="d-flex flex-wrap gap-2">
+                        <a class="btn btn-primary" href="upgrade/">Run upgrader</a>
+                        <a class="btn btn-outline-danger" href="install.php">Run installer again</a>
+                    </div>
                 </div>
             </div>
         <?php else: ?>

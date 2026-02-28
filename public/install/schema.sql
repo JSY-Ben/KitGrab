@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS assets (
     id INT UNSIGNED NOT NULL AUTO_INCREMENT,
     asset_tag VARCHAR(255) NOT NULL,
     name VARCHAR(255) NOT NULL,
+    location VARCHAR(255) DEFAULT NULL,
     model_id INT UNSIGNED NOT NULL,
     status ENUM('available','checked_out','maintenance','retired') NOT NULL DEFAULT 'available',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -215,4 +216,4 @@ CREATE TABLE IF NOT EXISTS schema_version (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT IGNORE INTO schema_version (version)
-VALUES ('0.5 (alpha)');
+VALUES ('0.10.0 (Beta)');

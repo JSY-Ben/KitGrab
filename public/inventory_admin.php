@@ -3,6 +3,7 @@ require_once __DIR__ . '/../src/bootstrap.php';
 require_once SRC_PATH . '/auth.php';
 require_once SRC_PATH . '/layout.php';
 require_once SRC_PATH . '/db.php';
+require_once SRC_PATH . '/inventory_schema.php';
 
 $active  = basename($_SERVER['PHP_SELF']);
 $isAdmin = !empty($currentUser['is_admin']);
@@ -19,6 +20,7 @@ if (!$isAdmin) {
 $messages = [];
 $errors   = [];
 $bustCatalogueCache = false;
+$assetLocationEnabled = inventory_asset_location_column_exists($pdo);
 
 function purge_catalogue_cache(): void
 {
@@ -96,22 +98,34 @@ if (in_array($exportType, ['categories', 'models', 'assets'], true)) {
             ]);
         }
     } elseif ($exportType === 'assets') {
-        fputcsv($out, ['id', 'asset_tag', 'name', 'model_id', 'model_name', 'status']);
+        $headers = ['id', 'asset_tag', 'name'];
+        if ($assetLocationEnabled) {
+            $headers[] = 'location';
+        }
+        $headers = array_merge($headers, ['model_id', 'model_name', 'status']);
+        fputcsv($out, $headers);
+        $locationSelect = $assetLocationEnabled ? ', a.location' : '';
         $rows = $pdo->query('
-            SELECT a.id, a.asset_tag, a.name, a.model_id, a.status, m.name AS model_name
+            SELECT a.id, a.asset_tag, a.name' . $locationSelect . ', a.model_id, a.status, m.name AS model_name
               FROM assets a
               JOIN asset_models m ON m.id = a.model_id
              ORDER BY a.asset_tag ASC
         ')->fetchAll(PDO::FETCH_ASSOC) ?: [];
         foreach ($rows as $row) {
-            fputcsv($out, [
+            $csvRow = [
                 (int)$row['id'],
                 $row['asset_tag'] ?? '',
                 $row['name'] ?? '',
+            ];
+            if ($assetLocationEnabled) {
+                $csvRow[] = $row['location'] ?? '';
+            }
+            $csvRow = array_merge($csvRow, [
                 (int)($row['model_id'] ?? 0),
                 $row['model_name'] ?? '',
                 $row['status'] ?? '',
             ]);
+            fputcsv($out, $csvRow);
         }
     }
     fclose($out);
@@ -370,6 +384,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $assetEditId = (int)($_POST['asset_id'] ?? 0);
         $assetTag = trim($_POST['asset_tag'] ?? '');
         $assetName = trim($_POST['asset_name'] ?? '');
+        $assetLocation = $assetLocationEnabled ? trim($_POST['asset_location'] ?? '') : '';
         $modelId = (int)($_POST['asset_model_id'] ?? 0);
         $status = $_POST['asset_status'] ?? 'available';
 
@@ -418,34 +433,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 if ($assetEditId > 0) {
-                    $stmt = $pdo->prepare("
-                        UPDATE assets
-                           SET asset_tag = :asset_tag,
-                               name = :name,
-                               model_id = :model_id,
-                               status = :status
-                         WHERE id = :id
-                    ");
-                    $stmt->execute([
+                    $params = [
                         ':asset_tag' => $assetTag,
                         ':name' => $assetName,
                         ':model_id' => $modelId,
                         ':status' => $status,
                         ':id' => $assetEditId,
-                    ]);
+                    ];
+                    $locationSql = '';
+                    if ($assetLocationEnabled) {
+                        $locationSql = ",
+                               location = :location";
+                        $params[':location'] = $assetLocation !== '' ? $assetLocation : null;
+                    }
+
+                    $stmt = $pdo->prepare("
+                        UPDATE assets
+                           SET asset_tag = :asset_tag,
+                               name = :name{$locationSql},
+                               model_id = :model_id,
+                               status = :status
+                         WHERE id = :id
+                    ");
+                    $stmt->execute($params);
                     $messages[] = 'Asset updated.';
                     $bustCatalogueCache = true;
                 } else {
-                    $stmt = $pdo->prepare("
-                        INSERT INTO assets (asset_tag, name, model_id, status, created_at)
-                        VALUES (:asset_tag, :name, :model_id, :status, NOW())
-                    ");
-                    $stmt->execute([
+                    $columns = 'asset_tag, name';
+                    $values = ':asset_tag, :name';
+                    $params = [
                         ':asset_tag' => $assetTag,
                         ':name' => $assetName,
                         ':model_id' => $modelId,
                         ':status' => $status,
-                    ]);
+                    ];
+                    if ($assetLocationEnabled) {
+                        $columns .= ', location';
+                        $values .= ', :location';
+                        $params[':location'] = $assetLocation !== '' ? $assetLocation : null;
+                    }
+                    $columns .= ', model_id, status, created_at';
+                    $values .= ', :model_id, :status, NOW()';
+
+                    $stmt = $pdo->prepare("
+                        INSERT INTO assets ({$columns})
+                        VALUES ({$values})
+                    ");
+                    $stmt->execute($params);
                     $assetEditId = (int)$pdo->lastInsertId();
                     $messages[] = 'Asset created.';
                     $bustCatalogueCache = true;
@@ -676,6 +710,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             foreach ($rows as $idx => $row) {
                 $assetTag = trim($row['asset_tag'] ?? '');
                 $name = trim($row['name'] ?? '');
+                $location = $assetLocationEnabled ? trim($row['location'] ?? '') : '';
                 $status = trim($row['status'] ?? '');
                 if ($status === '') {
                     $status = 'available';
@@ -714,34 +749,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $stmt->execute([':id' => $existingId]);
                             $name = (string)$stmt->fetchColumn();
                         }
-                        $stmt = $pdo->prepare("
-                            UPDATE assets
-                               SET name = :name,
-                                   model_id = :model_id,
-                                   status = :status
-                             WHERE id = :id
-                        ");
-                        $stmt->execute([
+                        $params = [
                             ':name' => $name,
                             ':model_id' => $modelId,
                             ':status' => $status,
                             ':id' => $existingId,
-                        ]);
+                        ];
+                        $locationSql = '';
+                        if ($assetLocationEnabled) {
+                            $locationSql = ",
+                                   location = :location";
+                            $params[':location'] = $location !== '' ? $location : null;
+                        }
+
+                        $stmt = $pdo->prepare("
+                            UPDATE assets
+                               SET name = :name{$locationSql},
+                                   model_id = :model_id,
+                                   status = :status
+                             WHERE id = :id
+                        ");
+                        $stmt->execute($params);
                     } else {
                         if ($name === '') {
                             $rowErrors[] = 'Row ' . ($idx + 2) . ': name is required for new assets.';
                             continue;
                         }
-                        $stmt = $pdo->prepare("
-                            INSERT INTO assets (asset_tag, name, model_id, status, created_at)
-                            VALUES (:asset_tag, :name, :model_id, :status, NOW())
-                        ");
-                        $stmt->execute([
+                        $columns = 'asset_tag, name';
+                        $values = ':asset_tag, :name';
+                        $params = [
                             ':asset_tag' => $assetTag,
                             ':name' => $name,
                             ':model_id' => $modelId,
                             ':status' => $status,
-                        ]);
+                        ];
+                        if ($assetLocationEnabled) {
+                            $columns .= ', location';
+                            $values .= ', :location';
+                            $params[':location'] = $location !== '' ? $location : null;
+                        }
+                        $columns .= ', model_id, status, created_at';
+                        $values .= ', :model_id, :status, NOW()';
+
+                        $stmt = $pdo->prepare("
+                            INSERT INTO assets ({$columns})
+                            VALUES ({$values})
+                        ");
+                        $stmt->execute($params);
                     }
                     $imported++;
                 } catch (Throwable $e) {
@@ -903,7 +957,11 @@ try {
         $where = [];
         $params = [];
         if ($assetsSearch !== '') {
-            $where[] = '(a.asset_tag LIKE :q OR a.name LIKE :q OR m.name LIKE :q)';
+            $assetSearchFields = ['a.asset_tag LIKE :q', 'a.name LIKE :q', 'm.name LIKE :q'];
+            if ($assetLocationEnabled) {
+                $assetSearchFields[] = 'a.location LIKE :q';
+            }
+            $where[] = '(' . implode(' OR ', $assetSearchFields) . ')';
             $params[':q'] = '%' . $assetsSearch . '%';
         }
         if ($assetsStatusFilter !== '') {
@@ -932,11 +990,15 @@ try {
             'model' => 'm.name',
             'status' => 'a.status',
         ];
+        if ($assetLocationEnabled) {
+            $sortMap['location'] = 'a.location';
+        }
         [$sortKey, $sortDir] = array_pad(explode(':', $assetsSort), 2, 'asc');
         $sortKey = $sortMap[$sortKey] ?? 'a.asset_tag';
         $sortDir = strtolower($sortDir) === 'desc' ? 'DESC' : 'ASC';
+        $locationSelect = $assetLocationEnabled ? ', a.location' : '';
         $sql = "
-            SELECT a.id, a.asset_tag, a.name, a.model_id, a.status, a.created_at, m.name AS model_name
+            SELECT a.id, a.asset_tag, a.name{$locationSelect}, a.model_id, a.status, a.created_at, m.name AS model_name
               FROM assets a
               JOIN asset_models m ON m.id = a.model_id
              {$whereSql}
@@ -1102,6 +1164,10 @@ if ($modelEditId > 0) {
                                     <option value="tag:desc" <?= $assetsSort === 'tag:desc' ? 'selected' : '' ?>>Sort by tag (Z-A)</option>
                                     <option value="name:asc" <?= $assetsSort === 'name:asc' ? 'selected' : '' ?>>Sort by name (A-Z)</option>
                                     <option value="name:desc" <?= $assetsSort === 'name:desc' ? 'selected' : '' ?>>Sort by name (Z-A)</option>
+                                    <?php if ($assetLocationEnabled): ?>
+                                        <option value="location:asc" <?= $assetsSort === 'location:asc' ? 'selected' : '' ?>>Sort by location (A-Z)</option>
+                                        <option value="location:desc" <?= $assetsSort === 'location:desc' ? 'selected' : '' ?>>Sort by location (Z-A)</option>
+                                    <?php endif; ?>
                                     <option value="model:asc" <?= $assetsSort === 'model:asc' ? 'selected' : '' ?>>Sort by model (A-Z)</option>
                                     <option value="model:desc" <?= $assetsSort === 'model:desc' ? 'selected' : '' ?>>Sort by model (Z-A)</option>
                                     <option value="status:asc" <?= $assetsSort === 'status:asc' ? 'selected' : '' ?>>Sort by status (A-Z)</option>
@@ -1142,6 +1208,9 @@ if ($modelEditId > 0) {
                                         <th>ID</th>
                                         <th>Tag</th>
                                         <th>Name</th>
+                                        <?php if ($assetLocationEnabled): ?>
+                                            <th>Location</th>
+                                        <?php endif; ?>
                                         <th>Model</th>
                                         <th>Status</th>
                                         <th></th>
@@ -1157,6 +1226,9 @@ if ($modelEditId > 0) {
                                             <td><?= (int)($asset['id'] ?? 0) ?></td>
                                             <td><?= h($asset['asset_tag'] ?? '') ?></td>
                                             <td><?= h($asset['name'] ?? '') ?></td>
+                                            <?php if ($assetLocationEnabled): ?>
+                                                <td><?= h($asset['location'] ?? '') ?></td>
+                                            <?php endif; ?>
                                             <td><?= h($asset['model_name'] ?? '') ?></td>
                                             <td><?= h(ucwords(str_replace('_', ' ', $asset['status'] ?? 'available'))) ?></td>
                                             <td class="text-end">
@@ -1476,7 +1548,9 @@ if ($modelEditId > 0) {
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-muted small mb-3">Columns: asset_tag, name, model_id or model_name, status</p>
+                    <p class="text-muted small mb-3">
+                        Columns: asset_tag, name<?= $assetLocationEnabled ? ', location' : '' ?>, model_id or model_name, status
+                    </p>
                     <div class="mb-3">
                         <a class="btn btn-outline-secondary btn-sm" href="inventory_admin.php?section=inventory&template=assets">Download template CSV</a>
                     </div>
@@ -1647,15 +1721,21 @@ if ($modelEditId > 0) {
                     </div>
                     <div class="modal-body">
                         <div class="row g-3">
-                            <div class="col-md-3">
+                            <div class="col-md-4">
                                 <label class="form-label">Asset tag</label>
                                 <input type="text" name="asset_tag" class="form-control" required>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-4">
                                 <label class="form-label">Asset name</label>
                                 <input type="text" name="asset_name" class="form-control" required>
                             </div>
-                            <div class="col-md-3">
+                            <?php if ($assetLocationEnabled): ?>
+                                <div class="col-md-4">
+                                    <label class="form-label">Location</label>
+                                    <input type="text" name="asset_location" class="form-control">
+                                </div>
+                            <?php endif; ?>
+                            <div class="col-md-6">
                                 <label class="form-label">Model</label>
                                 <select name="asset_model_id" class="form-select" required>
                                     <?php foreach ($modelsAll as $modelOption): ?>
@@ -1665,7 +1745,7 @@ if ($modelEditId > 0) {
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-6">
                                 <label class="form-label">Status</label>
                                 <select name="asset_status" class="form-select">
                                     <?php foreach ($statusOptions as $opt): ?>
@@ -1700,15 +1780,21 @@ if ($modelEditId > 0) {
                 </div>
                 <div class="modal-body">
                     <div class="row g-3">
-                        <div class="col-md-3">
+                        <div class="col-md-4">
                             <label class="form-label">Asset tag</label>
                             <input type="text" name="asset_tag" class="form-control" required>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-4">
                             <label class="form-label">Asset name</label>
                             <input type="text" name="asset_name" class="form-control" required>
                         </div>
-                        <div class="col-md-3">
+                        <?php if ($assetLocationEnabled): ?>
+                            <div class="col-md-4">
+                                <label class="form-label">Location</label>
+                                <input type="text" name="asset_location" class="form-control">
+                            </div>
+                        <?php endif; ?>
+                        <div class="col-md-6">
                             <label class="form-label">Model</label>
                             <select name="asset_model_id" class="form-select" required>
                                 <option value="">Select model</option>
@@ -1719,7 +1805,7 @@ if ($modelEditId > 0) {
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-6">
                             <label class="form-label">Status</label>
                                 <select name="asset_status" class="form-select">
                                     <?php foreach ($statusOptions as $opt): ?>
@@ -1754,15 +1840,21 @@ if ($modelEditId > 0) {
                     </div>
                     <div class="modal-body">
                         <div class="row g-3">
-                            <div class="col-md-3">
+                            <div class="col-md-4">
                                 <label class="form-label">Asset tag</label>
                                 <input type="text" name="asset_tag" class="form-control" value="<?= h($asset['asset_tag'] ?? '') ?>" required>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-4">
                                 <label class="form-label">Asset name</label>
                                 <input type="text" name="asset_name" class="form-control" value="<?= h($asset['name'] ?? '') ?>" required>
                             </div>
-                            <div class="col-md-3">
+                            <?php if ($assetLocationEnabled): ?>
+                                <div class="col-md-4">
+                                    <label class="form-label">Location</label>
+                                    <input type="text" name="asset_location" class="form-control" value="<?= h($asset['location'] ?? '') ?>">
+                                </div>
+                            <?php endif; ?>
+                            <div class="col-md-6">
                                 <label class="form-label">Model</label>
                                 <select name="asset_model_id" class="form-select" required>
                                     <option value="">Select model</option>
@@ -1773,7 +1865,7 @@ if ($modelEditId > 0) {
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-6">
                                 <label class="form-label">Status</label>
                                 <?php $currentStatus = $asset['status'] ?? 'available'; ?>
                                 <?php if ($currentStatus === 'checked_out'): ?>
