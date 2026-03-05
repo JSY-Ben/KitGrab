@@ -17,6 +17,11 @@ if (!$isAdmin) {
     exit;
 }
 
+// Prevent browser/proxy caching of settings responses.
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
+
 $configPath  = CONFIG_PATH . '/config.php';
 $examplePath = CONFIG_PATH . '/config.example.php';
 
@@ -629,6 +634,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             clear_catalogue_model_cache_files();
             unset($_SESSION['overdue_check_cache']);
+            clearstatcache(true, $configPath);
+            if (function_exists('opcache_invalidate')) {
+                @opcache_invalidate($configPath, true);
+                $legacyConfigPath = APP_ROOT . '/config.php';
+                if (is_file($legacyConfigPath)) {
+                    @opcache_invalidate($legacyConfigPath, true);
+                }
+            }
             $messages[] = 'Config saved successfully. Cache cleared.';
         }
     }
