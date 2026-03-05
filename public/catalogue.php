@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once SRC_PATH . '/auth.php';
+require_once SRC_PATH . '/booking_helpers.php';
 require_once SRC_PATH . '/inventory_schema.php';
 require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/inventory_client.php';
@@ -1190,42 +1191,27 @@ if (!empty($models)) {
             $modelIdChunks = array_chunk(array_keys($pageModelIds), 250);
             foreach ($modelIdChunks as $chunk) {
                 $placeholders = implode(',', array_fill(0, count($chunk), '?'));
-                if ($showAvailableLocations) {
-                    $stmt = $pdo->prepare("
-                        SELECT model_id, asset_id
-                          FROM checked_out_asset_cache
-                         WHERE model_id IN ({$placeholders})
-                    ");
-                    $stmt->execute($chunk);
-                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                $stmt = $pdo->prepare("
+                    SELECT model_id, asset_id, expected_checkin
+                      FROM checked_out_asset_cache
+                     WHERE model_id IN ({$placeholders})
+                ");
+                $stmt->execute($chunk);
+                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-                    foreach ($rows as $row) {
-                        $mid = (int)($row['model_id'] ?? 0);
-                        $assetId = (int)($row['asset_id'] ?? 0);
-                        if ($mid <= 0) {
-                            continue;
-                        }
-
-                        $checkedOutCounts[$mid] = ($checkedOutCounts[$mid] ?? 0) + 1;
-                        if ($assetId > 0) {
-                            $checkedOutAssetIdsByModel[$mid][$assetId] = true;
-                        }
+                foreach ($rows as $row) {
+                    $mid = (int)($row['model_id'] ?? 0);
+                    $assetId = (int)($row['asset_id'] ?? 0);
+                    if ($mid <= 0) {
+                        continue;
                     }
-                } else {
-                    $stmt = $pdo->prepare("
-                        SELECT model_id, COUNT(*) AS cnt
-                          FROM checked_out_asset_cache
-                         WHERE model_id IN ({$placeholders})
-                         GROUP BY model_id
-                    ");
-                    $stmt->execute($chunk);
-                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    if (!booking_should_count_checked_out_asset($config, $row['expected_checkin'] ?? '', $windowActive ? (int)$windowStartTs : null)) {
+                        continue;
+                    }
 
-                    foreach ($rows as $row) {
-                        $mid = (int)($row['model_id'] ?? 0);
-                        if ($mid > 0) {
-                            $checkedOutCounts[$mid] = (int)($row['cnt'] ?? 0);
-                        }
+                    $checkedOutCounts[$mid] = ($checkedOutCounts[$mid] ?? 0) + 1;
+                    if ($showAvailableLocations && $assetId > 0) {
+                        $checkedOutAssetIdsByModel[$mid][$assetId] = true;
                     }
                 }
             }
@@ -1552,7 +1538,11 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                         if (array_key_exists($modelId, $checkedOutCounts)) {
                             $activeCheckedOut = $checkedOutCounts[$modelId];
                         } else {
-                            $activeCheckedOut = count_checked_out_assets_by_model($modelId);
+                            $activeCheckedOut = booking_count_effective_checked_out_assets(
+                                $modelId,
+                                $config,
+                                $windowActive ? (int)$windowStartTs : null
+                            );
                         }
 
                         $booked = $pendingQty + $activeCheckedOut;

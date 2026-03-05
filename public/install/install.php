@@ -411,16 +411,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installLocked) {
             'reservation_notice_minutes' => 0,
             'reservation_notice_bypass_checkout_staff' => false,
             'reservation_notice_bypass_admins' => false,
+            'reservation_notice_bypass_quick_checkout' => false,
             'reservation_min_duration_minutes' => 0,
             'reservation_max_duration_minutes' => 0,
             'reservation_duration_bypass_checkout_staff' => false,
             'reservation_duration_bypass_admins' => false,
+            'reservation_duration_bypass_quick_checkout' => false,
             'reservation_max_concurrent_reservations' => 0,
             'reservation_concurrent_bypass_checkout_staff' => false,
             'reservation_concurrent_bypass_admins' => false,
+            'reservation_concurrent_bypass_quick_checkout' => false,
             'reservation_blackout_slots' => [],
             'reservation_blackout_bypass_checkout_staff' => false,
             'reservation_blackout_bypass_admins' => false,
+            'reservation_blackout_bypass_quick_checkout' => false,
             'announcements' => [],
             'announcement_message' => '',
             'announcement_start_ts' => 0,
@@ -430,6 +434,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installLocked) {
         ];
         $newConfig['catalogue'] = [
             'allowed_categories' => [],
+            'checked_out_affects_future_availability' => true,
             'show_available_locations' => false,
             'allow_public_view' => false,
         ];

@@ -129,18 +129,22 @@ return [
         'reservation_notice_minutes' => 0,
         'reservation_notice_bypass_checkout_staff' => false,
         'reservation_notice_bypass_admins' => false,
+        'reservation_notice_bypass_quick_checkout' => false,
         'reservation_min_duration_minutes' => 0,
         'reservation_max_duration_minutes' => 0,
         'reservation_duration_bypass_checkout_staff' => false,
         'reservation_duration_bypass_admins' => false,
+        'reservation_duration_bypass_quick_checkout' => false,
         'reservation_max_concurrent_reservations' => 0,
         'reservation_concurrent_bypass_checkout_staff' => false,
         'reservation_concurrent_bypass_admins' => false,
+        'reservation_concurrent_bypass_quick_checkout' => false,
         'reservation_blackout_slots' => [
             // ['start' => '2026-03-01 09:00:00', 'end' => '2026-03-01 17:00:00', 'reason' => 'Maintenance'],
         ],
         'reservation_blackout_bypass_checkout_staff' => false,
         'reservation_blackout_bypass_admins' => false,
+        'reservation_blackout_bypass_quick_checkout' => false,
         // Timed catalogue announcements
         'announcements' => [
             // ['message' => 'Notice', 'start_datetime' => '2026-01-01 09:00:00', 'end_datetime' => '2026-01-01 17:00:00'],
@@ -157,6 +161,8 @@ return [
         // Restrict which categories appear in the catalogue filter.
         // Leave empty to show all categories.
         'allowed_categories' => [],
+        // When true, currently checked-out assets still reduce future availability even if due back before the booking starts.
+        'checked_out_affects_future_availability' => true,
         // Show a per-location availability summary on catalogue cards.
         'show_available_locations' => false,
         // Allow non-logged-in users to view Dashboard/Catalogue.
