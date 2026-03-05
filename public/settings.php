@@ -627,7 +627,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (@file_put_contents($configPath, $content, LOCK_EX) === false) {
             $errors[] = 'Could not write config.php. Check file permissions on the config/ directory.';
         } else {
-            $messages[] = 'Config saved successfully.';
+            clear_catalogue_model_cache_files();
+            unset($_SESSION['overdue_check_cache']);
+            $messages[] = 'Config saved successfully. Cache cleared.';
         }
     }
 
