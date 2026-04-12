@@ -50,7 +50,162 @@ function upgrade_current_schema_version(PDO $pdo): string
     return $version !== '' ? $version : 'None recorded';
 }
 
-$targetVersion = '0.10.0 (Beta)';
+function upgrade_dump_identifier(string $name): string
+{
+    return '`' . str_replace('`', '``', $name) . '`';
+}
+
+function upgrade_dump_value(PDO $pdo, $value): string
+{
+    if ($value === null) {
+        return 'NULL';
+    }
+
+    return $pdo->quote((string)$value);
+}
+
+function upgrade_dump_table_order(PDO $pdo, string $databaseName, array $tables): array
+{
+    $orderedTables = [];
+    $tables = array_values(array_filter(array_map('strval', $tables), 'strlen'));
+    $dependencies = [];
+    foreach ($tables as $table) {
+        $dependencies[$table] = [];
+    }
+
+    if ($databaseName !== '') {
+        try {
+            $stmt = $pdo->prepare("
+                SELECT TABLE_NAME, REFERENCED_TABLE_NAME
+                  FROM information_schema.KEY_COLUMN_USAGE
+                 WHERE TABLE_SCHEMA = :schema
+                   AND REFERENCED_TABLE_SCHEMA = :schema
+                   AND REFERENCED_TABLE_NAME IS NOT NULL
+            ");
+            $stmt->execute([':schema' => $databaseName]);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $table = (string)($row['TABLE_NAME'] ?? '');
+                $refTable = (string)($row['REFERENCED_TABLE_NAME'] ?? '');
+                if (isset($dependencies[$table], $dependencies[$refTable])) {
+                    $dependencies[$table][$refTable] = true;
+                }
+            }
+        } catch (Throwable $e) {
+            return $tables;
+        }
+    }
+
+    $temporary = [];
+    $permanent = [];
+    $visit = static function (string $table) use (&$visit, &$dependencies, &$temporary, &$permanent, &$orderedTables): void {
+        if (isset($permanent[$table]) || isset($temporary[$table])) {
+            return;
+        }
+
+        $temporary[$table] = true;
+        foreach (array_keys($dependencies[$table] ?? []) as $dependency) {
+            $visit($dependency);
+        }
+        unset($temporary[$table]);
+
+        $permanent[$table] = true;
+        $orderedTables[] = $table;
+    };
+
+    foreach ($tables as $table) {
+        $visit($table);
+    }
+
+    return array_values(array_unique($orderedTables));
+}
+
+function upgrade_stream_database_backup(PDO $pdo, string $databaseName, string $appName): void
+{
+    $timestamp = date('Ymd-His');
+    $safeDbName = preg_replace('/[^A-Za-z0-9._-]+/', '-', $databaseName);
+    $safeDbName = $safeDbName !== '' ? $safeDbName : 'database';
+    $fileName = $safeDbName . '-backup-' . $timestamp . '.sql';
+
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+
+    header('Content-Type: application/sql; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="' . $fileName . '"');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+    header('Pragma: no-cache');
+
+    echo '-- ' . str_replace(["\r", "\n"], ' ', $appName) . " booking database backup\n";
+    echo '-- Database: ' . str_replace(["\r", "\n"], ' ', $databaseName) . "\n";
+    echo '-- Generated: ' . date('Y-m-d H:i:s') . "\n\n";
+    echo "SET SQL_MODE = 'NO_AUTO_VALUE_ON_ZERO';\n";
+    echo "SET AUTOCOMMIT = 0;\n";
+    echo "START TRANSACTION;\n";
+    echo "SET time_zone = '+00:00';\n";
+    echo "SET FOREIGN_KEY_CHECKS = 0;\n\n";
+
+    $tables = $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    $tables = upgrade_dump_table_order($pdo, $databaseName, $tables);
+    foreach ($tables as $tableName) {
+        $tableRef = upgrade_dump_identifier((string)$tableName);
+        $createStmt = $pdo->query('SHOW CREATE TABLE ' . $tableRef)->fetch(PDO::FETCH_ASSOC);
+        if (!$createStmt) {
+            continue;
+        }
+
+        $createSql = '';
+        foreach ($createStmt as $key => $value) {
+            if (stripos((string)$key, 'create table') !== false) {
+                $createSql = (string)$value;
+                break;
+            }
+        }
+        if ($createSql === '') {
+            continue;
+        }
+
+        echo "--\n-- Table structure for table {$tableName}\n--\n\n";
+        echo "DROP TABLE IF EXISTS {$tableRef};\n";
+        echo $createSql . ";\n\n";
+
+        $rows = $pdo->query('SELECT * FROM ' . $tableRef);
+        if (!$rows) {
+            continue;
+        }
+
+        $rowCount = 0;
+        foreach ($rows as $row) {
+            if (!is_array($row) || empty($row)) {
+                continue;
+            }
+            if ($rowCount === 0) {
+                echo "--\n-- Dumping data for table {$tableName}\n--\n\n";
+            }
+
+            $columns = [];
+            $values = [];
+            foreach ($row as $column => $value) {
+                if (is_int($column)) {
+                    continue;
+                }
+                $columns[] = upgrade_dump_identifier((string)$column);
+                $values[] = upgrade_dump_value($pdo, $value);
+            }
+            if (!empty($columns)) {
+                echo 'INSERT INTO ' . $tableRef . ' (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $values) . ");\n";
+                $rowCount++;
+            }
+        }
+        if ($rowCount > 0) {
+            echo "\n";
+        }
+    }
+
+    echo "SET FOREIGN_KEY_CHECKS = 1;\n";
+    echo "COMMIT;\n";
+}
+
+$targetVersion = '0.12.0-Beta';
 $configExists = is_file($configPath) || is_file($legacyConfigPath);
 $messages = [];
 $errors = [];
@@ -73,13 +228,40 @@ if (!$configExists) {
 
 $migrations = [
     [
-        'version' => $targetVersion,
+        'version' => '0.10.0 (Beta)',
         'label' => 'Add the asset location column and mark the schema as current',
-        'is_applied' => static function (PDO $pdo, array $appliedVersions) use ($targetVersion): bool {
-            return isset($appliedVersions[$targetVersion]) && inventory_asset_location_column_exists($pdo);
+        'is_applied' => static function (PDO $pdo, array $appliedVersions): bool {
+            return isset($appliedVersions['0.10.0 (Beta)']) && inventory_asset_location_column_exists($pdo);
         },
         'run' => static function (PDO $pdo): void {
             inventory_ensure_asset_location_column($pdo);
+        },
+    ],
+    [
+        'version' => '0.12.0-Beta',
+        'label' => 'Add user favourite models',
+        'is_applied' => static function (PDO $pdo, array $appliedVersions): bool {
+            try {
+                $pdo->query('SELECT 1 FROM user_favourite_models LIMIT 1');
+                return isset($appliedVersions['0.12.0-Beta']);
+            } catch (Throwable $e) {
+                return false;
+            }
+        },
+        'run' => static function (PDO $pdo): void {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS user_favourite_models (
+                    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    user_email VARCHAR(255) NOT NULL,
+                    model_id INT UNSIGNED NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                    PRIMARY KEY (id),
+                    UNIQUE KEY uq_user_favourite_models_user_model (user_email, model_id),
+                    KEY idx_user_favourite_models_user (user_email),
+                    KEY idx_user_favourite_models_model (model_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
         },
     ],
 ];
@@ -88,6 +270,12 @@ if ($upgradeReady) {
     try {
         upgrade_ensure_schema_version_table($pdo);
         $appliedVersions = upgrade_applied_versions($pdo);
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'download_backup') {
+            $databaseName = trim((string)($config['db_booking']['dbname'] ?? ''));
+            upgrade_stream_database_backup($pdo, $databaseName !== '' ? $databaseName : 'kitgrab', layout_app_name($config));
+            exit;
+        }
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'run_upgrade') {
             foreach ($migrations as $migration) {
@@ -167,6 +355,21 @@ if ($upgradeReady) {
                 <?= implode('<br>', array_map('upgrade_h', $errors)) ?>
             </div>
         <?php endif; ?>
+
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Backup current booking database</h5>
+                <p class="text-muted mb-3">
+                    Download a `.sql` backup of the configured KitGrab booking database before applying upgrades.
+                </p>
+                <form method="post" class="mb-0">
+                    <input type="hidden" name="action" value="download_backup">
+                    <button class="btn btn-outline-secondary" type="submit" <?= !$upgradeReady ? 'disabled' : '' ?>>
+                        Download SQL backup
+                    </button>
+                </form>
+            </div>
+        </div>
 
         <div class="card">
             <div class="card-body">

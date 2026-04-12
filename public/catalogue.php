@@ -6,6 +6,7 @@ require_once SRC_PATH . '/inventory_schema.php';
 require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/inventory_client.php';
 require_once SRC_PATH . '/layout.php';
+require_once SRC_PATH . '/favourites.php';
 
 $config   = load_config();
 $catalogueCfg = $config['catalogue'] ?? [];
@@ -1035,6 +1036,9 @@ if (!$skipOverdueCheck && !$catalogueBlocked && empty($overdueAssets)) {
 $searchRaw    = trim($_GET['q'] ?? '');
 $categoryRaw  = trim($_GET['category'] ?? '');
 $sortRaw      = trim($_GET['sort'] ?? '');
+$favouritesOnlyRaw = trim((string)($_GET['favourites_only'] ?? ''));
+$favouritesOnlyHasQuery = array_key_exists('favourites_only', $_GET);
+$favouritesOnlyExplicitToggle = array_key_exists('favourites_only_explicit', $_GET);
 $page         = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 $windowStartRaw = trim($_GET['start_datetime'] ?? '');
 $windowEndRaw   = trim($_GET['end_datetime'] ?? '');
@@ -1043,6 +1047,18 @@ $windowEndRaw   = trim($_GET['end_datetime'] ?? '');
 $search   = $searchRaw !== '' ? $searchRaw : null;
 $category = ctype_digit($categoryRaw) ? (int)$categoryRaw : null;
 $sort     = $sortRaw !== '' ? $sortRaw : null;
+$favouritesOnlyRequested = in_array(strtolower($favouritesOnlyRaw), ['1', 'true', 'on', 'yes'], true);
+$favouritesOnly = false;
+if ($isAuthenticated) {
+    if ($favouritesOnlyExplicitToggle || $favouritesOnlyHasQuery) {
+        $favouritesOnly = $favouritesOnlyRequested;
+        $_SESSION['catalogue_show_favourites_only'] = $favouritesOnly ? 1 : 0;
+    } else {
+        $favouritesOnly = !empty($_SESSION['catalogue_show_favourites_only']);
+    }
+} else {
+    unset($_SESSION['catalogue_show_favourites_only']);
+}
 
 if ($windowStartRaw === '' && $windowEndRaw === '') {
     $sessionStart = trim((string)($_SESSION['reservation_window_start'] ?? ''));
@@ -1098,6 +1114,14 @@ $windowStartIso = $windowActive ? date('Y-m-d H:i:s', $windowStartTs) : '';
 $windowEndIso   = $windowActive ? date('Y-m-d H:i:s', $windowEndTs) : '';
 $checkedOutCounts = [];
 $checkedOutAssetIdsByModel = [];
+$favouritesAvailable = false;
+$favouriteModelIds = [];
+$favouriteModelMap = [];
+$favouritesUserEmail = '';
+$canUseFavourites = false;
+$catalogueReturnParams = $_GET;
+$catalogueReturnParams['prefetch'] = 1;
+$catalogueReturnUrl = 'catalogue.php?' . http_build_query($catalogueReturnParams);
 ?>
 <!DOCTYPE html>
 <html>
@@ -1151,11 +1175,35 @@ if (is_array($allowedCfg)) {
     }
 }
 
+if ($isAuthenticated) {
+    $favouritesUserEmail = favourites_normalize_user_email((string)($activeUser['email'] ?? ''));
+    $favouritesAvailable = favourites_storage_available($pdo);
+    $canUseFavourites = $favouritesAvailable && $favouritesUserEmail !== '';
+    if ($canUseFavourites) {
+        $favouriteModelIds = favourites_get_model_ids($pdo, $favouritesUserEmail);
+        foreach ($favouriteModelIds as $favouriteModelId) {
+            $favouriteModelMap[(int)$favouriteModelId] = true;
+        }
+    } else {
+        $favouritesOnly = false;
+    }
+} else {
+    $favouritesOnly = false;
+}
+
 // ---------------------------------------------------------------------
 // Load models from local inventory (deferred so loader shows immediately)
 // ---------------------------------------------------------------------
 try {
-    $data = get_bookable_models($page, $search ?? '', $category, $sort, $perPage, $allowedCategoryIds);
+    $modelAllowlist = $favouritesOnly ? $favouriteModelIds : [];
+    if ($favouritesOnly && empty($modelAllowlist)) {
+        $data = [
+            'rows' => [],
+            'total' => 0,
+        ];
+    } else {
+        $data = get_bookable_models($page, $search ?? '', $category, $sort, $perPage, $allowedCategoryIds, false, $modelAllowlist);
+    }
 
     if (isset($data['rows']) && is_array($data['rows'])) {
         $models = $data['rows'];
@@ -1356,6 +1404,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
             <input type="hidden" name="start_datetime" value="<?= h($windowStartRaw) ?>">
             <input type="hidden" name="end_datetime" value="<?= h($windowEndRaw) ?>">
             <input type="hidden" name="prefetch" value="1">
+            <input type="hidden" name="favourites_only_explicit" value="1">
 
             <div class="row g-3 align-items-end">
                 <div class="col-12 col-lg-5">
@@ -1408,6 +1457,25 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                 <div class="col-12 col-lg-2 d-grid">
                     <button class="btn btn-primary btn-lg" type="submit">Filter results</button>
                 </div>
+
+                <?php if ($isAuthenticated): ?>
+                    <div class="col-12">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input"
+                                   type="checkbox"
+                                   id="show_favourites_only"
+                                   name="favourites_only"
+                                   <?= $favouritesOnly ? 'checked' : '' ?>
+                                   <?= $canUseFavourites ? '' : 'disabled' ?>>
+                            <label class="form-check-label fw-semibold small" for="show_favourites_only">
+                                Show favourites only
+                            </label>
+                            <?php if (!$favouritesAvailable): ?>
+                                <div class="form-text">Run the database upgrader to enable favourites.</div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
             </div>
         </form>
 
@@ -1419,6 +1487,9 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
             <input type="hidden" name="q" value="<?= h($searchRaw) ?>">
             <input type="hidden" name="category" value="<?= h($categoryRaw) ?>">
             <input type="hidden" name="sort" value="<?= h($sortRaw) ?>">
+            <?php if ($favouritesOnly): ?>
+                <input type="hidden" name="favourites_only" value="1">
+            <?php endif; ?>
             <input type="hidden" name="prefetch" value="1">
             <div class="row g-3 align-items-end">
                 <div class="col-md-5">
@@ -1450,7 +1521,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
 
         <?php if (empty($models) && !$modelErr): ?>
             <div class="alert alert-info">
-                No models found. Try adjusting your filters.
+                <?= $favouritesOnly ? 'No favourite models found for the selected filters.' : 'No models found. Try adjusting your filters.' ?>
             </div>
         <?php endif; ?>
 
@@ -1614,6 +1685,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                     }
 
                     $displayImage = $imagePath !== '' ? $imagePath : '';
+                    $isFavourite = $isAuthenticated && isset($favouriteModelMap[$modelId]);
                     ?>
                     <div class="col-md-4">
                         <div class="card h-100 model-card model-card--details"
@@ -1621,13 +1693,17 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                              data-model-name="<?= h($name) ?>"
                              role="button"
                              tabindex="0"
-                             aria-label="Open notes and bookings for <?= h($name) ?>">
+                            aria-label="Open notes and bookings for <?= h($name) ?>">
                             <?php if ($displayImage !== ''): ?>
-                                <div class="model-image-wrapper">
+                                <button type="button"
+                                        class="model-image-wrapper model-image-wrapper--zoomable"
+                                        data-image-zoom-src="<?= h($displayImage) ?>"
+                                        data-image-zoom-title="<?= h($name) ?>"
+                                        aria-label="Open larger image for <?= h($name) ?>">
                                     <img src="<?= h($displayImage) ?>"
                                          alt=""
                                          class="model-image img-fluid">
-                                </div>
+                                </button>
                             <?php else: ?>
                                 <div class="model-image-wrapper model-image-wrapper--placeholder">
                                     <div class="model-image-placeholder">
@@ -1660,6 +1736,28 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                                         </div>
                                     <?php endif; ?>
                                 </p>
+
+                                <?php if ($isAuthenticated): ?>
+                                    <form method="post"
+                                          action="favourite_toggle.php"
+                                          class="model-favourite-inline mb-2">
+                                        <input type="hidden" name="model_id" value="<?= $modelId ?>">
+                                        <input type="hidden" name="return_url" value="<?= h($catalogueReturnUrl) ?>">
+                                        <div class="form-check">
+                                            <input class="form-check-input model-favourite-checkbox"
+                                                   type="checkbox"
+                                                   id="model_favourite_<?= $modelId ?>"
+                                                   name="is_favourite"
+                                                   value="1"
+                                                   <?= $isFavourite ? 'checked' : '' ?>
+                                                   <?= $canUseFavourites ? '' : 'disabled' ?>>
+                                            <label class="form-check-label small fw-semibold"
+                                                   for="model_favourite_<?= $modelId ?>">
+                                                Favourite
+                                            </label>
+                                        </div>
+                                    </form>
+                                <?php endif; ?>
 
                                 <form method="post"
                                       action="basket_add.php"
@@ -1721,6 +1819,9 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                             'end_datetime' => $windowEndRaw,
                             'prefetch' => 1,
                         ];
+                        if ($favouritesOnly) {
+                            $baseQuery['favourites_only'] = '1';
+                        }
                         ?>
                         <?php for ($p = 1; $p <= $totalPages; $p++): ?>
                             <?php $q = http_build_query(array_merge($baseQuery, ['page' => $p])); ?>
@@ -1778,6 +1879,29 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
     </div>
 </div>
 <?php endif; ?>
+
+<div id="model-image-zoom-modal"
+     class="catalogue-modal catalogue-modal--image-zoom"
+     role="dialog"
+     aria-modal="true"
+     aria-hidden="true"
+     aria-labelledby="model-image-zoom-title"
+     hidden>
+    <div class="catalogue-modal__backdrop" data-image-zoom-close></div>
+    <div class="catalogue-modal__dialog" role="document">
+        <div class="catalogue-modal__header">
+            <h2 id="model-image-zoom-title" class="catalogue-modal__title">Model image</h2>
+            <button type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    data-image-zoom-close>
+                Close
+            </button>
+        </div>
+        <div class="catalogue-modal__body">
+            <img id="model-image-zoomed" class="model-image-zoomed" src="" alt="">
+        </div>
+    </div>
+</div>
 
 <div id="model-details-modal"
      class="catalogue-modal"
@@ -1871,6 +1995,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const filterForm = document.getElementById('catalogue-filter-form');
     const categorySelect = filterForm ? filterForm.querySelector('select[name="category"]') : null;
     const sortSelect = filterForm ? filterForm.querySelector('select[name="sort"]') : null;
+    const favouritesOnlyCheckbox = filterForm ? filterForm.querySelector('input[name="favourites_only"]') : null;
     const windowStartInput = document.getElementById('catalogue_start_datetime');
     const windowEndInput = document.getElementById('catalogue_end_datetime');
     const windowForm = document.getElementById('catalogue-window-form');
@@ -1884,6 +2009,10 @@ document.addEventListener('DOMContentLoaded', function () {
     let nativeWindowBlurTimer = null;
     const modelDetailCards = document.querySelectorAll('.model-card--details');
     const announcementModal = document.getElementById('catalogue-announcement-modal');
+    const imageZoomModal = document.getElementById('model-image-zoom-modal');
+    const imageZoomTitle = document.getElementById('model-image-zoom-title');
+    const imageZoomImage = document.getElementById('model-image-zoomed');
+    const imageZoomTriggers = document.querySelectorAll('[data-image-zoom-src]');
     const modelDetailsModal = document.getElementById('model-details-modal');
     const modelDetailsDialog = modelDetailsModal ? modelDetailsModal.querySelector('.catalogue-modal__dialog') : null;
     const modelDetailsTitle = document.getElementById('model-details-title');
@@ -1903,12 +2032,14 @@ document.addEventListener('DOMContentLoaded', function () {
     let modelDetailsRequestId = 0;
     let modelModalOpen = false;
     let announcementModalOpen = false;
+    let imageZoomModalOpen = false;
     let modelModalOpenAnimation = null;
     let announcementModalLastFocused = null;
+    let imageZoomLastFocused = null;
     let modalLastFocusedElement = null;
 
     function syncModalBodyState() {
-        const hasOpenModal = modelModalOpen || announcementModalOpen;
+        const hasOpenModal = modelModalOpen || announcementModalOpen || imageZoomModalOpen;
         document.body.classList.toggle('catalogue-modal-open', hasOpenModal);
     }
 
@@ -1964,6 +2095,40 @@ document.addEventListener('DOMContentLoaded', function () {
             announcementModalLastFocused.focus();
         }
         announcementModalLastFocused = null;
+    }
+
+    function openImageZoomModal(src, title) {
+        if (!imageZoomModal || !imageZoomImage) return;
+        imageZoomLastFocused = document.activeElement;
+        imageZoomModalOpen = true;
+        imageZoomImage.src = src;
+        imageZoomImage.alt = title || 'Model image';
+        if (imageZoomTitle) {
+            imageZoomTitle.textContent = title || 'Model image';
+        }
+        imageZoomModal.hidden = false;
+        imageZoomModal.setAttribute('aria-hidden', 'false');
+        syncModalBodyState();
+        window.requestAnimationFrame(function () {
+            if (!imageZoomModalOpen || !imageZoomModal) return;
+            imageZoomModal.classList.add('is-open');
+        });
+    }
+
+    function closeImageZoomModal() {
+        if (!imageZoomModal || !imageZoomModalOpen) return;
+        imageZoomModalOpen = false;
+        imageZoomModal.classList.remove('is-open');
+        imageZoomModal.hidden = true;
+        imageZoomModal.setAttribute('aria-hidden', 'true');
+        if (imageZoomImage) {
+            imageZoomImage.src = '';
+        }
+        syncModalBodyState();
+        if (imageZoomLastFocused && typeof imageZoomLastFocused.focus === 'function') {
+            imageZoomLastFocused.focus();
+        }
+        imageZoomLastFocused = null;
     }
 
     function openAnnouncementModal() {
@@ -2589,6 +2754,13 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    if (favouritesOnlyCheckbox) {
+        favouritesOnlyCheckbox.addEventListener('change', function () {
+            showLoadingOverlay();
+            filterForm.submit();
+        });
+    }
+
     const searchInput = filterForm ? filterForm.querySelector('input[name="q"]') : null;
     if (searchInput) {
         searchInput.addEventListener('blur', function () {
@@ -2835,8 +3007,39 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    if (imageZoomModal) {
+        imageZoomModal.addEventListener('click', function (event) {
+            const target = event.target;
+            if (target && target.closest && target.closest('[data-image-zoom-close]')) {
+                closeImageZoomModal();
+            }
+        });
+    }
+
+    imageZoomTriggers.forEach(function (trigger) {
+        trigger.addEventListener('click', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            openImageZoomModal(trigger.dataset.imageZoomSrc || '', trigger.dataset.imageZoomTitle || 'Model image');
+        });
+    });
+
+    document.querySelectorAll('.model-favourite-checkbox').forEach(function (checkbox) {
+        checkbox.addEventListener('change', function () {
+            const form = checkbox.closest('form');
+            if (!form) return;
+            showLoadingOverlay();
+            form.submit();
+        });
+    });
+
     document.addEventListener('keydown', function (event) {
         if (event.key !== 'Escape') {
+            return;
+        }
+        if (imageZoomModalOpen) {
+            event.preventDefault();
+            closeImageZoomModal();
             return;
         }
         if (modelModalOpen) {

@@ -48,6 +48,181 @@ if (!function_exists('layout_app_name')) {
     }
 }
 
+if (!function_exists('layout_html_escape')) {
+    function layout_html_escape(?string $value): string
+    {
+        return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
+    }
+}
+
+if (!function_exists('layout_known_database_upgrades')) {
+    function layout_known_database_upgrades(): array
+    {
+        return [
+            [
+                'version' => '0.10.0 (Beta)',
+                'description' => 'Add asset location support.',
+                'is_applied' => static function (PDO $pdo): bool {
+                    require_once SRC_PATH . '/inventory_schema.php';
+                    try {
+                        $stmt = $pdo->prepare('SELECT 1 FROM schema_version WHERE version = :version LIMIT 1');
+                        $stmt->execute([':version' => '0.10.0 (Beta)']);
+                        return (bool)$stmt->fetchColumn() && inventory_asset_location_column_exists($pdo);
+                    } catch (Throwable $e) {
+                        return false;
+                    }
+                },
+            ],
+            [
+                'version' => '0.12.0-Beta',
+                'description' => 'Add user favourite models.',
+                'is_applied' => static function (PDO $pdo): bool {
+                    try {
+                        $stmt = $pdo->prepare('SELECT 1 FROM schema_version WHERE version = :version LIMIT 1');
+                        $stmt->execute([':version' => '0.12.0-Beta']);
+                        $versionApplied = (bool)$stmt->fetchColumn();
+                        $pdo->query('SELECT 1 FROM user_favourite_models LIMIT 1');
+                        return $versionApplied;
+                    } catch (Throwable $e) {
+                        return false;
+                    }
+                },
+            ],
+        ];
+    }
+}
+
+if (!function_exists('layout_pending_database_upgrades')) {
+    function layout_pending_database_upgrades(): array
+    {
+        $pending = [];
+        $loadError = '';
+
+        try {
+            require_once SRC_PATH . '/db.php';
+            global $pdo;
+            foreach (layout_known_database_upgrades() as $upgrade) {
+                $isApplied = $upgrade['is_applied'];
+                if (!$isApplied($pdo)) {
+                    $pending[] = $upgrade;
+                }
+            }
+        } catch (Throwable $e) {
+            $loadError = $e->getMessage();
+            $pending = layout_known_database_upgrades();
+        }
+
+        return [
+            'pending' => $pending,
+            'load_error' => $loadError,
+        ];
+    }
+}
+
+if (!function_exists('layout_is_install_upgrade_page')) {
+    function layout_is_install_upgrade_page(): bool
+    {
+        $scriptName = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? ''));
+        return (bool)preg_match('#/install/upgrade/(?:index\.php)?$#', $scriptName)
+            || (bool)preg_match('#/install/upgrade$#', $scriptName);
+    }
+}
+
+if (!function_exists('layout_upgrade_page_url')) {
+    function layout_upgrade_page_url(): string
+    {
+        $scriptName = (string)($_SERVER['SCRIPT_NAME'] ?? '');
+        $scriptDir = rtrim(str_replace('\\', '/', dirname($scriptName)), '/');
+        $leaf = $scriptDir !== '' ? basename($scriptDir) : '';
+        if ($leaf === 'upgrade' && basename(dirname($scriptDir)) === 'install') {
+            return 'index.php';
+        }
+        if ($leaf === 'install') {
+            return 'upgrade/';
+        }
+        return 'install/upgrade/';
+    }
+}
+
+if (!function_exists('layout_render_pending_upgrade_modal')) {
+    function layout_render_pending_upgrade_modal(): void
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE || empty($_SESSION['show_pending_upgrade_modal'])) {
+            return;
+        }
+        unset($_SESSION['show_pending_upgrade_modal']);
+
+        $sessionUser = $_SESSION['user'] ?? [];
+        if (empty($sessionUser['is_admin']) || layout_is_install_upgrade_page()) {
+            return;
+        }
+
+        $upgradeStatus = layout_pending_database_upgrades();
+        $pending = $upgradeStatus['pending'] ?? [];
+        if (empty($pending)) {
+            return;
+        }
+
+        echo '<div id="pending-upgrade-modal" class="catalogue-modal catalogue-modal--upgrade" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="pending-upgrade-title" hidden>';
+        echo '<div class="catalogue-modal__backdrop" data-pending-upgrade-close></div>';
+        echo '<div class="catalogue-modal__dialog" role="document"><div class="catalogue-modal__header">';
+        echo '<h2 id="pending-upgrade-title" class="catalogue-modal__title">Database Upgrade Pending</h2>';
+        echo '<button type="button" class="btn btn-sm btn-outline-secondary" data-pending-upgrade-close>Close</button>';
+        echo '</div><div class="catalogue-modal__body">';
+        echo '<p class="text-muted mb-3">The booking database has pending upgrades. Review them before running the upgrader.</p>';
+        if (trim((string)($upgradeStatus['load_error'] ?? '')) !== '') {
+            echo '<div class="alert alert-warning small mb-3">Could not read the applied upgrade history, so known upgrades are listed for review.</div>';
+        }
+        echo '<ul class="upgrade-modal__list">';
+        foreach ($pending as $item) {
+            echo '<li class="upgrade-modal__item"><strong>'
+                . layout_html_escape((string)($item['version'] ?? ''))
+                . '</strong><span>'
+                . layout_html_escape((string)($item['description'] ?? ''))
+                . '</span></li>';
+        }
+        echo '</ul><div class="d-flex flex-wrap justify-content-end gap-2 mt-4">';
+        echo '<button type="button" class="btn btn-outline-secondary" data-pending-upgrade-close>Remind me later</button>';
+        echo '<a class="btn btn-primary" href="' . layout_html_escape(layout_upgrade_page_url()) . '">Open upgrade page</a>';
+        echo '</div></div></div></div>';
+        echo <<<'SCRIPT'
+<script>
+(function () {
+    const openModal = function () {
+        const modal = document.getElementById('pending-upgrade-modal');
+        if (!modal) return;
+        const closeModal = function () {
+            modal.classList.remove('is-open');
+            modal.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('catalogue-modal-open');
+            window.setTimeout(function () { modal.hidden = true; }, 220);
+        };
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('catalogue-modal-open');
+        window.requestAnimationFrame(function () {
+            modal.classList.add('is-open');
+            const action = modal.querySelector('a.btn-primary');
+            if (action && typeof action.focus === 'function') action.focus();
+        });
+        modal.querySelectorAll('[data-pending-upgrade-close]').forEach(function (button) {
+            button.addEventListener('click', closeModal);
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && modal.classList.contains('is-open')) closeModal();
+        });
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', openModal);
+    } else {
+        openModal();
+    }
+})();
+</script>
+SCRIPT;
+    }
+}
+
 // Backward-compatible wrappers retained for pages that still call legacy
 // layout_* date formatting helpers.
 if (!function_exists('layout_date_format')) {
@@ -531,6 +706,7 @@ if (!function_exists('layout_footer')) {
 })();
 </script>
 SCRIPT;
+        layout_render_pending_upgrade_modal();
         $cfg = layout_cached_config();
         $appName = layout_app_name($cfg);
         $appNameEsc = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');

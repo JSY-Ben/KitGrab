@@ -106,7 +106,8 @@ function get_bookable_models(
     ?string $sort = null,
     int $perPage = 50,
     array $allowedCategoryIds = [],
-    bool $disableCache = false
+    bool $disableCache = false,
+    array $allowedModelIds = []
 ): array {
     global $pdo;
 
@@ -133,6 +134,7 @@ function get_bookable_models(
             'sort' => $sort,
             'per_page' => $perPage,
             'allowed_categories' => array_values($allowedCategoryIds),
+            'allowed_models' => array_values($allowedModelIds),
         ];
         $cacheHash = md5(json_encode($cacheKey));
         $cacheFile = sys_get_temp_dir() . '/kitgrab_catalogue_' . $cacheHash . '.json';
@@ -168,6 +170,16 @@ function get_bookable_models(
             $params[$ph] = (int)$cid;
         }
         $where[] = 'm.category_id IN (' . implode(',', $placeholders) . ')';
+    }
+
+    if (!empty($allowedModelIds)) {
+        $placeholders = [];
+        foreach ($allowedModelIds as $idx => $mid) {
+            $ph = ':allowed_model_' . $idx;
+            $placeholders[] = $ph;
+            $params[$ph] = (int)$mid;
+        }
+        $where[] = 'm.id IN (' . implode(',', $placeholders) . ')';
     }
 
     $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';

@@ -204,6 +204,21 @@ CREATE TABLE IF NOT EXISTS activity_log (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------
+-- User favourite models
+-- ------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_favourite_models (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    user_email VARCHAR(255) NOT NULL,
+    model_id INT UNSIGNED NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_user_favourite_models_user_model (user_email, model_id),
+    KEY idx_user_favourite_models_user (user_email),
+    KEY idx_user_favourite_models_model (model_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------
 -- Optional: simple schema versioning
 -- ------------------------------------------------------
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -216,4 +231,5 @@ CREATE TABLE IF NOT EXISTS schema_version (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT IGNORE INTO schema_version (version)
-VALUES ('0.10.0 (Beta)');
+VALUES ('0.10.0 (Beta)'),
+       ('0.12.0-Beta');

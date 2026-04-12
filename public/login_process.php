@@ -70,6 +70,15 @@ $redirectWithError = static function (string $message) {
     exit;
 };
 
+$queuePendingUpgradeModal = static function (bool $isAdmin): void {
+    if ($isAdmin) {
+        $_SESSION['show_pending_upgrade_modal'] = true;
+        return;
+    }
+
+    unset($_SESSION['show_pending_upgrade_modal']);
+};
+
 $upsertUser = static function (PDO $pdo, string $email, string $firstName, string $lastName, string $username, ?string $authSource = null): int {
     $userTable = 'users';
     $userIdCol = 'user_id';
@@ -263,6 +272,7 @@ if ($provider === 'local') {
         ],
     ]);
 
+    $queuePendingUpgradeModal($isAdmin);
     header('Location: index.php');
     exit;
 }
@@ -438,6 +448,7 @@ if ($provider === 'google') {
         ],
     ]);
 
+    $queuePendingUpgradeModal($isAdmin);
     header('Location: index.php');
     exit;
 }
@@ -656,6 +667,7 @@ if ($provider === 'microsoft') {
         ],
     ]);
 
+    $queuePendingUpgradeModal($isAdmin);
     header('Location: index.php');
     exit;
 }
@@ -855,5 +867,6 @@ activity_log_event('user_login', 'User logged in', [
 
 ldap_unbind($ldap);
 
+$queuePendingUpgradeModal($isAdmin);
 header('Location: index.php');
 exit;
