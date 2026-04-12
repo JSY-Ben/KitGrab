@@ -419,6 +419,12 @@ input[type="checkbox"] {
     transform: translateY(0);
 }
 
+.model-card--details:has(.model-image-wrapper--zoomable:hover)::after,
+.model-card--details:has(.model-image-wrapper--zoomable:focus-visible)::after {
+    opacity: 0;
+    transform: translateY(-3px);
+}
+
 .model-card--details:focus-visible {
     outline: 3px solid rgba(var(--primary-rgb), 0.28);
     outline-offset: 2px;
