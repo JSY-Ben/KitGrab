@@ -1753,7 +1753,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                                                    <?= $canUseFavourites ? '' : 'disabled' ?>>
                                             <label class="form-check-label small fw-semibold"
                                                    for="model_favourite_<?= $modelId ?>">
-                                                Favourite
+                                                Add to Favourites
                                             </label>
                                         </div>
                                     </form>
