@@ -2,19 +2,17 @@
 
 ## 0.12.0-Beta
 
+This app is currently in a fully working state, but don't have much in the way of user feedback to determine if can be moved out of Beta, so am keeping it in Beta for now. Please do report any issues and feature requests on the 'Issues' tab in Github.
+
 ### Upgrade Notes
 
-This release includes a database upgrade for the new catalogue favourites feature.
+This release includes a database upgrade for new features.
 
-Existing installations should run the browser upgrader at:
+The app should pop up a warning when an admin logs in directing you to the upgrade page. Howevever if you prefer to do this manually, an admin can run the browser upgrader at:
 
-`public/install/upgrade/`
+`www.yourinstall.com/public/install/upgrade/`
 
-Alternatively, the SQL upgrade can be run manually:
-
-`public/install/upgrade/0.12.0-Beta-Favourites.sql`
-
-The upgrader now includes a SQL backup download button so administrators can export the KitGrab booking database before applying updates.
+The upgrader now includes a SQL backup download button so admins can export the KitGrab booking database before applying updates. This is highly recommended!
 
 ### New Features
 
@@ -22,23 +20,10 @@ The upgrader now includes a SQL backup download button so administrators can exp
 - Added a full-size image viewer on catalogue model images.
 - Added quantity increase/decrease controls in the basket, so users can adjust requested quantities without returning to the catalogue.
 - Added an admin login warning when pending database upgrades are detected.
-- Added a standalone SQL upgrade file for version `0.12.0-Beta`.
 - Added a “Show all upcoming reservations” toggle to the staff checkout reservation selector.
 - Added a warning when staff select a future reservation whose early checkout may clash with other reservations before its scheduled start.
 
 ### Bug Fixes
 
-- Fixed missed-reservation cutoff checks to use the configured app timezone instead of database server time. This avoids daylight saving and DB/PHP timezone drift issues.
-- Fixed datetime parsing so displayed dates are interpreted using the configured app timezone.
+- Fixed app issues caused by users who observe DST (Daylight Savings Time)
 - Reservation policy controls now also apply when editing pending reservations, not only when creating them.
-
-### Database Changes
-
-- Added `user_favourite_models` to store per-user favourite catalogue models.
-- Fresh installs now record schema version `0.12.0-Beta`.
-- Existing installs can apply the same schema change through the upgrader or the standalone SQL file.
-
-### Verification
-
-- `git diff --check` passes.
-- PHP syntax linting was not run in this environment because no `php` binary was available on the shell path.
