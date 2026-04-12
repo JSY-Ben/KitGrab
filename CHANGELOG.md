@@ -23,6 +23,8 @@ The upgrader now includes a SQL backup download button so administrators can exp
 - Added quantity increase/decrease controls in the basket, so users can adjust requested quantities without returning to the catalogue.
 - Added an admin login warning when pending database upgrades are detected.
 - Added a standalone SQL upgrade file for version `0.12.0-Beta`.
+- Added a “Show all upcoming reservations” toggle to the staff checkout reservation selector.
+- Added a warning when staff select a future reservation whose early checkout may clash with other reservations before its scheduled start.
 
 ### Bug Fixes
 
