@@ -1265,21 +1265,14 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                     </div>
                                 </div>
                                 <div class="row g-3 align-items-end">
-                                    <div class="col-12 col-lg-6">
+                                    <div class="col-12 col-lg-8">
                                         <label class="form-label mb-1 fw-semibold">Search items</label>
                                         <input type="search"
                                                class="form-control"
                                                placeholder="Search by model, category, or manufacturer"
                                                data-permissions-search>
                                     </div>
-                                    <div class="col-6 col-lg-3">
-                                        <label class="form-label mb-1 fw-semibold">Type</label>
-                                        <select class="form-select" data-permissions-type-filter>
-                                            <option value="">All types</option>
-                                            <option value="model">Equipment</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-6 col-lg-3">
+                                    <div class="col-12 col-lg-4">
                                         <label class="form-label mb-1 fw-semibold">Category</label>
                                         <select class="form-select" data-permissions-category-filter>
                                             <option value="">All categories</option>
@@ -1309,7 +1302,6 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                     <tr>
                                         <th style="width: 120px;">Can reserve</th>
                                         <th>Item</th>
-                                        <th style="width: 140px;">Type</th>
                                         <th>Category</th>
                                         <th>Manufacturer</th>
                                     </tr>
@@ -1334,12 +1326,10 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                             (string)($permissionItem['name'] ?? ''),
                                             $permissionCategory,
                                             $permissionManufacturer,
-                                            'equipment',
                                         ])));
                                         ?>
                                         <tr data-permissions-row
                                             data-permissions-search-text="<?= h($permissionSearchText) ?>"
-                                            data-permissions-type="<?= h($permissionItemType) ?>"
                                             data-permissions-category="<?= h($permissionCategory) ?>">
                                             <td>
                                                 <div class="form-check form-switch mb-0">
@@ -1361,7 +1351,6 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                                     <?= h((string)($permissionItem['name'] ?? '')) ?>
                                                 </label>
                                             </td>
-                                            <td>Equipment</td>
                                             <td><?= h($permissionCategory) ?></td>
                                             <td><?= h($permissionManufacturer) ?></td>
                                         </tr>
@@ -2242,24 +2231,20 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
     }
 
     const permissionSearch = form.querySelector('[data-permissions-search]');
-    const permissionTypeFilter = form.querySelector('[data-permissions-type-filter]');
     const permissionCategoryFilter = form.querySelector('[data-permissions-category-filter]');
     const permissionRows = Array.from(form.querySelectorAll('[data-permissions-row]'));
     const permissionResultCount = form.querySelector('[data-permissions-result-count]');
     const applyPermissionFilters = () => {
         const q = String(permissionSearch ? permissionSearch.value : '').trim().toLowerCase();
-        const type = String(permissionTypeFilter ? permissionTypeFilter.value : '').trim();
         const category = String(permissionCategoryFilter ? permissionCategoryFilter.value : '').trim().toLowerCase();
         let visibleCount = 0;
 
         permissionRows.forEach((row) => {
             const rowText = String(row.dataset.permissionsSearchText || '');
-            const rowType = String(row.dataset.permissionsType || '');
             const rowCategory = String(row.dataset.permissionsCategory || '').trim().toLowerCase();
             const matchesSearch = q === '' || rowText.includes(q);
-            const matchesType = type === '' || rowType === type;
             const matchesCategory = category === '' || rowCategory === category;
-            const visible = matchesSearch && matchesType && matchesCategory;
+            const visible = matchesSearch && matchesCategory;
             row.classList.toggle('d-none', !visible);
             row.hidden = !visible;
             row.style.display = visible ? '' : 'none';
@@ -2272,7 +2257,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
             permissionResultCount.textContent = visibleCount + ' of ' + permissionRows.length + ' items shown';
         }
     };
-    [permissionSearch, permissionTypeFilter, permissionCategoryFilter].forEach((control) => {
+    [permissionSearch, permissionCategoryFilter].forEach((control) => {
         if (!control) return;
         control.addEventListener('input', applyPermissionFilters);
         control.addEventListener('change', applyPermissionFilters);
