@@ -25,6 +25,11 @@ Username: user, Password: user
 
 # Introduction
 
+<img width="2032" height="2966" alt="Catalogue" src="https://github.com/user-attachments/assets/9a55d635-c3da-462c-94c3-0bc7a17485c8" />
+
+<img width="2032" height="2412" alt="Reservations" src="https://github.com/user-attachments/assets/cac0f6fb-5faf-44d4-98a7-6537a0db78d2" />
+
+
 **KitGrab** is a PHP/MySQL web app for equipment booking, checkout workflows, and asset tracking. It uses its own local asset model and asset inventory database.
 
 Users can be created locally in the app, or you can make use of LDAP, Google OAuth, or Microsoft Entra OAuth Authentication. The installer creates an initial local admin account. When users sign in via external providers, they are added to the local user database automatically.
