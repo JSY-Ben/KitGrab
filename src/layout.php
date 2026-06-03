@@ -88,6 +88,22 @@ if (!function_exists('layout_known_database_upgrades')) {
                     }
                 },
             ],
+            [
+                'version' => '1.0.0',
+                'description' => 'Add user groups.',
+                'is_applied' => static function (PDO $pdo): bool {
+                    try {
+                        $stmt = $pdo->prepare('SELECT 1 FROM schema_version WHERE version = :version LIMIT 1');
+                        $stmt->execute([':version' => '1.0.0']);
+                        $versionApplied = (bool)$stmt->fetchColumn();
+                        $pdo->query('SELECT 1 FROM user_groups LIMIT 1');
+                        $pdo->query('SELECT 1 FROM user_group_members LIMIT 1');
+                        return $versionApplied;
+                    } catch (Throwable $e) {
+                        return false;
+                    }
+                },
+            ],
         ];
     }
 }
@@ -220,6 +236,31 @@ if (!function_exists('layout_render_pending_upgrade_modal')) {
 })();
 </script>
 SCRIPT;
+    }
+}
+
+if (!function_exists('layout_render_admin_tabs')) {
+    function layout_render_admin_tabs(string $active): string
+    {
+        $tabs = [
+            'inventory_admin.php' => 'Inventory',
+            'users.php' => 'Users',
+            'groups.php' => 'Groups',
+            'activity_log.php' => 'Activity Log',
+            'settings.php' => 'Settings',
+            'announcements.php' => 'Announcements',
+            'reports.php' => 'Reports',
+        ];
+
+        $html = '<ul class="nav nav-tabs reservations-subtabs mb-3">';
+        foreach ($tabs as $href => $label) {
+            $class = $active === $href ? 'nav-link active' : 'nav-link';
+            $html .= '<li class="nav-item"><a class="' . layout_html_escape($class) . '" href="'
+                . layout_html_escape($href) . '">' . layout_html_escape($label) . '</a></li>';
+        }
+        $html .= '</ul>';
+
+        return $html;
     }
 }
 

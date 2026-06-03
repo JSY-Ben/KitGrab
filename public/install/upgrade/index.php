@@ -205,7 +205,7 @@ function upgrade_stream_database_backup(PDO $pdo, string $databaseName, string $
     echo "COMMIT;\n";
 }
 
-$targetVersion = '0.12.0-Beta';
+$targetVersion = '1.0.0';
 $configExists = is_file($configPath) || is_file($legacyConfigPath);
 $messages = [];
 $errors = [];
@@ -260,6 +260,50 @@ $migrations = [
                     UNIQUE KEY uq_user_favourite_models_user_model (user_email, model_id),
                     KEY idx_user_favourite_models_user (user_email),
                     KEY idx_user_favourite_models_model (model_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        },
+    ],
+    [
+        'version' => '1.0.0',
+        'label' => 'Add user groups',
+        'is_applied' => static function (PDO $pdo, array $appliedVersions): bool {
+            try {
+                $pdo->query('SELECT 1 FROM user_groups LIMIT 1');
+                $pdo->query('SELECT 1 FROM user_group_members LIMIT 1');
+                return isset($appliedVersions['1.0.0']);
+            } catch (Throwable $e) {
+                return false;
+            }
+        },
+        'run' => static function (PDO $pdo): void {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS user_groups (
+                    id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT DEFAULT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                    PRIMARY KEY (id),
+                    UNIQUE KEY uq_user_groups_name (name)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS user_group_members (
+                    user_id INT UNSIGNED NOT NULL,
+                    group_id INT UNSIGNED NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                    PRIMARY KEY (user_id, group_id),
+                    KEY idx_user_group_members_group (group_id),
+                    CONSTRAINT fk_user_group_members_user
+                        FOREIGN KEY (user_id)
+                        REFERENCES users (id)
+                        ON DELETE CASCADE,
+                    CONSTRAINT fk_user_group_members_group
+                        FOREIGN KEY (group_id)
+                        REFERENCES user_groups (id)
+                        ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
         },

@@ -3,6 +3,7 @@ require_once __DIR__ . '/../src/bootstrap.php';
 require_once SRC_PATH . '/auth.php';
 require_once SRC_PATH . '/layout.php';
 require_once SRC_PATH . '/db.php';
+require_once SRC_PATH . '/group_helpers.php';
 
 $active  = basename($_SERVER['PHP_SELF']);
 $isAdmin = !empty($currentUser['is_admin']);
@@ -18,6 +19,12 @@ $messages = [];
 $errors   = [];
 
 $editRoleOnly = false;
+$groupsAvailable = false;
+try {
+    $groupsAvailable = group_tables_exist($pdo);
+} catch (Throwable $e) {
+    $groupsAvailable = false;
+}
 
 $exportType = $_GET['export'] ?? '';
 if ($exportType === 'users') {
@@ -110,6 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = $_POST['password'] ?? '';
         $isAdminFlag = isset($_POST['is_admin']);
         $isStaffFlag = isset($_POST['is_staff']) || $isAdminFlag;
+        $selectedGroupIds = group_normalize_ids($_POST['group_ids'] ?? []);
 
         if ($email === '') {
             if ($editId > 0) {
@@ -175,7 +183,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             ':is_staff' => $isStaffFlag ? 1 : 0,
                             ':id' => $editId,
                         ]);
-                        $messages[] = 'User roles updated.';
+                        if ($groupsAvailable) {
+                            group_replace_user_memberships($pdo, $editId, $selectedGroupIds);
+                        }
+                        $messages[] = 'User roles and groups updated.';
                     } else {
                         $stmt = $pdo->prepare("
                             UPDATE users
@@ -201,6 +212,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             ':password_hash' => $passwordHash,
                             ':id' => $editId,
                         ]);
+                        if ($groupsAvailable) {
+                            group_replace_user_memberships($pdo, $editId, $selectedGroupIds);
+                        }
                         $messages[] = 'User updated.';
                     }
                 } else {
@@ -218,6 +232,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':is_staff' => $isStaffFlag ? 1 : 0,
                         ':password_hash' => $passwordHash,
                     ]);
+                    if ($groupsAvailable) {
+                        group_replace_user_memberships($pdo, (int)$pdo->lastInsertId(), $selectedGroupIds);
+                    }
                     $messages[] = 'User created.';
                 }
             } catch (Throwable $e) {
@@ -346,6 +363,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $users = [];
+$groups = [];
+$userGroups = [];
 try {
     $stmt = $pdo->query('
         SELECT id, first_name, last_name, email, username, is_admin, is_staff, auth_source, created_at
@@ -355,6 +374,17 @@ try {
     $users = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 } catch (Throwable $e) {
     $errors[] = 'Could not load users: ' . $e->getMessage();
+}
+
+if ($groupsAvailable) {
+    try {
+        $groups = group_options($pdo);
+        $userGroups = group_user_membership_map($pdo);
+    } catch (Throwable $e) {
+        $errors[] = 'Could not load groups: ' . $e->getMessage();
+        $groups = [];
+        $userGroups = [];
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -404,26 +434,7 @@ try {
             </div>
         <?php endif; ?>
 
-        <ul class="nav nav-tabs reservations-subtabs mb-3">
-            <li class="nav-item">
-                <a class="nav-link" href="inventory_admin.php">Inventory</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link active" href="users.php">Users</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="activity_log.php">Activity Log</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="settings.php">Settings</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="announcements.php">Announcements</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="reports.php">Reports</a>
-            </li>
-        </ul>
+        <?= layout_render_admin_tabs($active) ?>
 
         <div class="card">
             <div class="card-body">
@@ -451,6 +462,8 @@ try {
                             <option value="role:desc">Sort by role (Z-A)</option>
                             <option value="source:asc">Sort by source (A-Z)</option>
                             <option value="source:desc">Sort by source (Z-A)</option>
+                            <option value="groups:asc">Sort by groups (A-Z)</option>
+                            <option value="groups:desc">Sort by groups (Z-A)</option>
                             <option value="created:desc">Sort by created (newest)</option>
                             <option value="created:asc">Sort by created (oldest)</option>
                         </select>
@@ -485,6 +498,7 @@ try {
                                     <th>Username</th>
                                     <th>Role</th>
                                     <th>Source</th>
+                                    <th>Groups</th>
                                     <th>Created</th>
                                     <th></th>
                                 </tr>
@@ -502,6 +516,10 @@ try {
                                     $createdAt = $createdAtRaw ? layout_format_datetime($createdAtRaw) : '';
                                     $createdAtSort = $createdAtRaw ? date('Y-m-d H:i:s', strtotime($createdAtRaw)) : '';
                                     $isRoleOnly = !empty($user['auth_source']) && $user['auth_source'] !== 'local';
+                                    $groupLabels = array_map(static function (array $group): string {
+                                        return (string)($group['name'] ?? '');
+                                    }, $userGroups[(int)$user['id']] ?? []);
+                                    $groupLabelText = implode(', ', array_filter($groupLabels, 'strlen'));
                                     ?>
                                     <tr data-first="<?= h($user['first_name'] ?? '') ?>"
                                         data-last="<?= h($user['last_name'] ?? '') ?>"
@@ -509,6 +527,7 @@ try {
                                         data-username="<?= h($user['username'] ?? '') ?>"
                                         data-role="<?= h($roleValue) ?>"
                                         data-source="<?= h($sourceValue) ?>"
+                                        data-groups="<?= h($groupLabelText) ?>"
                                         data-created="<?= h($createdAtSort) ?>">
                                         <td><?= h($user['first_name'] ?? '') ?></td>
                                         <td><?= h($user['last_name'] ?? '') ?></td>
@@ -516,6 +535,7 @@ try {
                                         <td><?= h($user['username'] ?? '') ?></td>
                                         <td><?= h($roleLabel) ?></td>
                                         <td><?= h($sourceLabel) ?></td>
+                                        <td><?= $groupLabelText !== '' ? h($groupLabelText) : '<span class="text-muted">None</span>' ?></td>
                                         <td><?= h($createdAt) ?></td>
                                         <td class="text-end">
                                             <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editUserModal-<?= (int)$user['id'] ?>">Edit</button>
@@ -581,6 +601,25 @@ try {
                                 <label class="form-check-label" for="create_is_staff">Checkout user</label>
                             </div>
                         </div>
+                        <div class="col-12">
+                            <label class="form-label">Groups</label>
+                            <?php if (!$groupsAvailable): ?>
+                                <div class="text-muted small">Run the database upgrader to enable groups.</div>
+                            <?php elseif (empty($groups)): ?>
+                                <div class="text-muted small">No groups have been created yet.</div>
+                            <?php else: ?>
+                                <div class="row g-2">
+                                    <?php foreach ($groups as $group): ?>
+                                        <div class="col-md-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" name="group_ids[]" value="<?= (int)$group['id'] ?>" id="create_group_<?= (int)$group['id'] ?>">
+                                                <label class="form-check-label" for="create_group_<?= (int)$group['id'] ?>"><?= h($group['name'] ?? '') ?></label>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -618,6 +657,9 @@ try {
 <?php foreach ($users as $user): ?>
     <?php
     $roleOnly = !empty($user['auth_source']) && $user['auth_source'] !== 'local';
+    $selectedUserGroupIds = array_map(static function (array $group): int {
+        return (int)($group['id'] ?? 0);
+    }, $userGroups[(int)$user['id']] ?? []);
     ?>
     <div class="modal fade" id="editUserModal-<?= (int)$user['id'] ?>" tabindex="-1" aria-labelledby="editUserModalLabel-<?= (int)$user['id'] ?>" aria-hidden="true">
         <div class="modal-dialog modal-lg">
@@ -631,7 +673,7 @@ try {
                     </div>
                     <div class="modal-body">
                         <p class="text-muted small mb-3">
-                            <?= $roleOnly ? 'External users can only have Staff/Admin roles updated here.' : 'Leave password blank to keep the existing password.' ?>
+                            <?= $roleOnly ? 'External users can only have Staff/Admin roles and groups updated here.' : 'Leave password blank to keep the existing password.' ?>
                         </p>
                         <div class="row g-3">
                             <div class="col-md-4">
@@ -665,6 +707,26 @@ try {
                                     <input class="form-check-input" type="checkbox" name="is_staff" id="edit_is_staff_<?= (int)$user['id'] ?>" <?= !empty($user['is_staff']) ? 'checked' : '' ?>>
                                     <label class="form-check-label" for="edit_is_staff_<?= (int)$user['id'] ?>">Checkout user</label>
                                 </div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Groups</label>
+                                <?php if (!$groupsAvailable): ?>
+                                    <div class="text-muted small">Run the database upgrader to enable groups.</div>
+                                <?php elseif (empty($groups)): ?>
+                                    <div class="text-muted small">No groups have been created yet.</div>
+                                <?php else: ?>
+                                    <div class="row g-2">
+                                        <?php foreach ($groups as $group): ?>
+                                            <?php $groupId = (int)$group['id']; ?>
+                                            <div class="col-md-4">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" name="group_ids[]" value="<?= $groupId ?>" id="edit_group_<?= (int)$user['id'] ?>_<?= $groupId ?>" <?= in_array($groupId, $selectedUserGroupIds, true) ? 'checked' : '' ?>>
+                                                    <label class="form-check-label" for="edit_group_<?= (int)$user['id'] ?>_<?= $groupId ?>"><?= h($group['name'] ?? '') ?></label>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
