@@ -6,10 +6,13 @@ require_once SRC_PATH . '/activity_log.php';
 require_once SRC_PATH . '/inventory_client.php';
 require_once SRC_PATH . '/layout.php';
 require_once SRC_PATH . '/reservation_policy.php';
+require_once SRC_PATH . '/staff_group_visibility.php';
 
 $isAdmin = !empty($currentUser['is_admin']);
 $isStaff = !empty($currentUser['is_staff']) || $isAdmin;
 $currentUserId = (string)($currentUser['id'] ?? '');
+$config = load_config();
+$restrictReservationsToSameGroup = staff_group_visibility_restriction_enabled($config, $currentUser);
 
 $from      = $_GET['from'] ?? ($_POST['from'] ?? '');
 $embedded  = $from === 'reservations';
@@ -109,6 +112,10 @@ if (!$isStaff) {
         echo 'Access denied.';
         exit;
     }
+} elseif (!staff_group_visibility_reservation_visible($reservation, $currentUser, $restrictReservationsToSameGroup)) {
+    http_response_code(403);
+    echo 'Access denied.';
+    exit;
 }
 
 if (($reservation['status'] ?? '') !== 'pending') {

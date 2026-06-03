@@ -165,6 +165,10 @@ return [
         'checked_out_affects_future_availability' => true,
         // Show a per-location availability summary on catalogue cards.
         'show_available_locations' => false,
+        // When true, restricted catalogue items remain visible but cannot be added to a basket.
+        'show_restricted_items' => true,
+        // When true, checkout users only see reservations and checked-out assets for users sharing one of their groups.
+        'restrict_checkout_reservations_to_same_group' => false,
         // Allow non-logged-in users to view Dashboard/Catalogue.
         'allow_public_view' => false,
     ],

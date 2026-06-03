@@ -436,6 +436,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installLocked) {
             'allowed_categories' => [],
             'checked_out_affects_future_availability' => true,
             'show_available_locations' => false,
+            'restrict_checkout_reservations_to_same_group' => false,
             'allow_public_view' => false,
         ];
         $newConfig['smtp'] = [
@@ -561,7 +562,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installLocked) {
                     ':password_hash' => $passwordHash,
                 ]);
 
-                $messages[] = 'Local admin account created in the users table.';
+                $stmt = $pdo->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
+                $stmt->execute([':email' => $adminEmail]);
+                $adminLocalId = (int)$stmt->fetchColumn();
+
+                $pdo->exec("
+                    INSERT INTO user_groups (name, description, is_admin, is_staff, created_at)
+                    VALUES ('Administrators', 'Users in this group have admin access.', 1, 1, NOW())
+                    ON DUPLICATE KEY UPDATE is_admin = 1, is_staff = 1
+                ");
+                if ($adminLocalId > 0) {
+                    $stmt = $pdo->prepare('SELECT id FROM user_groups WHERE name = :name LIMIT 1');
+                    $stmt->execute([':name' => 'Administrators']);
+                    $adminGroupId = (int)$stmt->fetchColumn();
+                    if ($adminGroupId > 0) {
+                        $stmt = $pdo->prepare('
+                            INSERT IGNORE INTO user_group_members (user_id, group_id)
+                            VALUES (:user_id, :group_id)
+                        ');
+                        $stmt->execute([
+                            ':user_id' => $adminLocalId,
+                            ':group_id' => $adminGroupId,
+                        ]);
+                    }
+                }
+
+                $messages[] = 'Local admin account created and added to the Administrators group.';
             } catch (Throwable $e) {
                 $errors[] = 'Local admin creation failed: ' . installer_h($e->getMessage());
             }

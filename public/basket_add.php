@@ -3,6 +3,7 @@ require_once __DIR__ . '/../src/bootstrap.php';
 require_once SRC_PATH . '/auth.php';
 require_once SRC_PATH . '/booking_helpers.php';
 require_once SRC_PATH . '/inventory_client.php';
+require_once SRC_PATH . '/catalogue_permissions.php';
 
 // Only allow POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -28,6 +29,30 @@ if ($startRaw !== '' && $endRaw !== '') {
 
 if ($modelId <= 0 || $qtyRequested <= 0) {
     // Bad input; just go back to catalogue
+    header('Location: catalogue.php');
+    exit;
+}
+
+$activeUser = $_SESSION['booking_user_override'] ?? $currentUser;
+if (!catalogue_permissions_is_item_allowed($activeUser, 'model', $modelId)) {
+    $isAjax = (
+        !empty($_SERVER['HTTP_X_REQUESTED_WITH']) &&
+        strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest'
+    ) || (
+        isset($_SERVER['HTTP_ACCEPT']) &&
+        strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false
+    );
+
+    if ($isAjax) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode([
+            'ok' => false,
+            'error' => 'You do not have permission to reserve this item.',
+        ]);
+        exit;
+    }
+
     header('Location: catalogue.php');
     exit;
 }

@@ -4,10 +4,13 @@ require_once __DIR__ . '/../src/bootstrap.php';
 require_once SRC_PATH . '/auth.php';
 require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/booking_helpers.php';
+require_once SRC_PATH . '/staff_group_visibility.php';
 require_once SRC_PATH . '/layout.php';
 
 $isAdmin = !empty($currentUser['is_admin']);
 $isStaff = !empty($currentUser['is_staff']) || $isAdmin;
+$config = load_config();
+$restrictReservationsToSameGroup = staff_group_visibility_restriction_enabled($config, $currentUser);
 
 function display_date(?string $isoDate): string
 {
@@ -46,6 +49,12 @@ try {
 if (!$reservation) {
     http_response_code(404);
     echo 'Reservation not found.';
+    exit;
+}
+
+if (!staff_group_visibility_reservation_visible($reservation, $currentUser, $restrictReservationsToSameGroup)) {
+    http_response_code(403);
+    echo 'Access denied.';
     exit;
 }
 

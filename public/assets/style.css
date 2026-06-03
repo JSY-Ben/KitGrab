@@ -1267,6 +1267,37 @@ form .form-select {
     object-fit: contain;
 }
 
+.settings-permissions-item {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-width: 0;
+}
+
+.settings-permissions-item__thumb {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    border: 1px solid var(--border);
+    border-radius: 0.35rem;
+    background: #fff;
+    object-fit: contain;
+    padding: 2px;
+}
+
+.settings-permissions-item__thumb--placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #888;
+    font-size: 0.75rem;
+    background: rgba(var(--primary-rgb), 0.08);
+}
+
+.settings-permissions-item__name {
+    min-width: 0;
+}
+
 .filter-panel {
     position: relative;
     padding: 1.25rem 1.35rem;
@@ -1439,6 +1470,49 @@ form .form-select {
     background: rgba(255, 255, 255, 0.96);
     border-color: rgba(255, 255, 255, 0.65);
     box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
+}
+
+.settings-permissions-filter-panel {
+    background: rgb(var(--primary-rgb));
+    border: 1px solid rgba(var(--primary-rgb), 0.55);
+    box-shadow: 0 14px 30px rgba(var(--primary-rgb), 0.18);
+    color: #ffffff;
+}
+
+.settings-permissions-filter-panel::after {
+    display: none;
+}
+
+.settings-permissions-filter-panel .form-label {
+    color: rgba(255, 255, 255, 0.88);
+}
+
+.settings-form .card .settings-permissions-filter-panel .row.g-3 > [class*="col-"],
+.settings-form .card .settings-permissions-filter-panel .row.g-2 > [class*="col-"],
+.settings-form .card .settings-permissions-filter-panel .row.g-3 > [class*="col-"]:nth-child(even),
+.settings-form .card .settings-permissions-filter-panel .row.g-2 > [class*="col-"]:nth-child(even),
+.settings-form .card .settings-permissions-filter-panel .row.g-3 > [class*="col-"]:hover,
+.settings-form .card .settings-permissions-filter-panel .row.g-2 > [class*="col-"]:hover {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    background-image: none;
+    box-shadow: none;
+}
+
+.settings-permissions-filter-panel .form-control,
+.settings-permissions-filter-panel .form-select {
+    background: #ffffff !important;
+    background-image: none !important;
+    border-color: rgba(255, 255, 255, 0.65);
+    color: #1f2937;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
+}
+
+.settings-permissions-filter-panel .form-select {
+    padding-right: 2.35rem;
+    background: #ffffff url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23374151' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e") no-repeat right 0.85rem center / 16px 12px !important;
 }
 
 /* --------------------------------------------------

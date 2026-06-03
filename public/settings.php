@@ -6,6 +6,7 @@ require_once SRC_PATH . '/config_writer.php';
 require_once SRC_PATH . '/reservation_policy.php';
 require_once SRC_PATH . '/inventory_client.php';
 require_once SRC_PATH . '/email.php';
+require_once SRC_PATH . '/catalogue_permissions.php';
 
 $active  = basename($_SERVER['PHP_SELF']);
 $isAdmin = !empty($currentUser['is_admin']);
@@ -542,6 +543,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $catalogue['checked_out_affects_future_availability'] = isset($_POST['catalogue_checked_out_affects_future_availability']);
     $catalogue['show_available_locations'] = isset($_POST['catalogue_show_available_locations']);
     $catalogue['allow_public_view'] = isset($_POST['catalogue_allow_public_view']);
+    $catalogue['show_restricted_items'] = isset($_POST['catalogue_show_restricted_items']);
+    $catalogue['restrict_checkout_reservations_to_same_group'] = isset($_POST['catalogue_restrict_checkout_reservations_to_same_group']);
 
     $smtp = $config['smtp'] ?? [];
     $smtp['host']       = $post('smtp_host', $smtp['host'] ?? '');
@@ -621,6 +624,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = 'SMTP test failed: ' . $e->getMessage();
         }
     } else {
+        if ($action === 'save' && ($_POST['settings_tab'] ?? '') === 'permissions') {
+            $permissionGroupId = (int)($_POST['permissions_group_id'] ?? 0);
+            $permissionGroupName = '';
+            try {
+                foreach (catalogue_permissions_groups() as $permissionGroup) {
+                    if ((int)($permissionGroup['id'] ?? 0) === $permissionGroupId) {
+                        $permissionGroupName = (string)($permissionGroup['name'] ?? '');
+                        break;
+                    }
+                }
+                $permissionAllowedItems = $_POST['permissions_allowed_items'] ?? [];
+                if (!is_array($permissionAllowedItems)) {
+                    $permissionAllowedItems = [];
+                }
+                catalogue_permissions_save_group_restrictions(
+                    $permissionGroupId,
+                    $permissionGroupName,
+                    catalogue_permissions_bookable_items(),
+                    $permissionAllowedItems
+                );
+                $messages[] = 'Catalogue permissions saved.';
+            } catch (Throwable $e) {
+                $errors[] = 'Catalogue permissions save failed: ' . $e->getMessage();
+            }
+        }
+
         $content = layout_build_config_file($newConfig, [
             'CATALOGUE_ITEMS_PER_PAGE' => $cataloguePP,
         ]);
@@ -744,6 +773,49 @@ if (!is_array($allowedCategoryIds)) {
 }
 $allowedCategoryIds = array_map('intval', $allowedCategoryIds);
 
+$permissionGroups = [];
+$permissionGroupsFetchError = '';
+$permissionCatalogueItems = [];
+$permissionCatalogueFetchError = '';
+$permissionDeniedMap = [];
+$permissionCategoryOptions = [];
+$selectedPermissionGroupId = (int)($_POST['permissions_group_id'] ?? $_GET['permissions_group_id'] ?? 0);
+try {
+    $permissionGroups = catalogue_permissions_groups();
+    if ($selectedPermissionGroupId <= 0 && !empty($permissionGroups)) {
+        $selectedPermissionGroupId = (int)($permissionGroups[0]['id'] ?? 0);
+    }
+} catch (Throwable $e) {
+    $permissionGroupsFetchError = $e->getMessage();
+    $permissionGroups = [];
+}
+try {
+    $permissionCatalogueItems = catalogue_permissions_bookable_items();
+    $categorySet = [];
+    foreach ($permissionCatalogueItems as $permissionItem) {
+        $category = trim((string)($permissionItem['category'] ?? ''));
+        if ($category === '') {
+            $category = 'Uncategorised';
+        }
+        $categorySet[$category] = $category;
+    }
+    natcasesort($categorySet);
+    $permissionCategoryOptions = array_values($categorySet);
+} catch (Throwable $e) {
+    $permissionCatalogueFetchError = $e->getMessage();
+    $permissionCatalogueItems = [];
+}
+if ($selectedPermissionGroupId > 0) {
+    try {
+        $permissionDeniedMap = catalogue_permissions_denied_item_map_for_group($selectedPermissionGroupId);
+    } catch (Throwable $e) {
+        $permissionDeniedMap = [];
+        if ($permissionCatalogueFetchError === '') {
+            $permissionCatalogueFetchError = $e->getMessage();
+        }
+    }
+}
+
 $reservationPolicy = reservation_policy_get($config);
 $reservationNoticeParts = reservation_policy_minutes_to_parts($reservationPolicy['notice_minutes'] ?? 0);
 $reservationMinDurationParts = reservation_policy_minutes_to_parts($reservationPolicy['min_duration_minutes'] ?? 0);
@@ -773,7 +845,7 @@ if (empty($reservationBlackoutRows)) {
 }
 
 $settingsTabRaw = strtolower(trim((string)($_POST['settings_tab'] ?? $_GET['settings_tab'] ?? 'frontend')));
-$settingsTab = in_array($settingsTabRaw, ['frontend', 'backend', 'notifications'], true)
+$settingsTab = in_array($settingsTabRaw, ['frontend', 'backend', 'permissions', 'notifications'], true)
     ? $settingsTabRaw
     : 'frontend';
 $selectedTimezone = (string)$cfg(['app', 'timezone'], 'Europe/Jersey');
@@ -832,26 +904,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
             </div>
         <?php endif; ?>
 
-        <ul class="nav nav-tabs reservations-subtabs mb-3">
-            <li class="nav-item">
-                <a class="nav-link" href="inventory_admin.php">Inventory</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="users.php">Users</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="activity_log.php">Activity Log</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link active" href="settings.php">Settings</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="announcements.php">Announcements</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="reports.php">Reports</a>
-            </li>
-        </ul>
+        <?= layout_render_admin_tabs($active) ?>
 
         <form method="post" action="<?= h($active) ?>" class="row g-3 settings-form" id="settings-form" enctype="multipart/form-data">
             <input type="hidden" name="settings_tab" id="settings_tab_input" value="<?= h($settingsTab) ?>">
@@ -871,6 +924,14 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                 data-settings-tab="backend"
                                 aria-selected="<?= $settingsTab === 'backend' ? 'true' : 'false' ?>">
                             Backend Settings
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button type="button"
+                                class="nav-link <?= $settingsTab === 'permissions' ? 'active' : '' ?>"
+                                data-settings-tab="permissions"
+                                aria-selected="<?= $settingsTab === 'permissions' ? 'true' : 'false' ?>">
+                            Permissions
                         </button>
                     </li>
                     <li class="nav-item">
@@ -1140,6 +1201,202 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                             <div class="small text-muted" id="smtp-test-result"></div>
                             <button type="button" class="btn btn-outline-primary btn-sm" data-test-action="test_smtp" data-target="smtp-test-result">Test SMTP</button>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12<?= $settingsTab === 'permissions' ? '' : ' d-none' ?>" data-settings-group="permissions">
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title mb-1">Checkout User Permissions</h5>
+                        <p class="text-muted small mb-3">Control which reservations checkout users can access in the staff reservation tabs.</p>
+
+                        <div class="border rounded p-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input"
+                                       type="checkbox"
+                                       name="catalogue_restrict_checkout_reservations_to_same_group"
+                                       id="catalogue_restrict_checkout_reservations_to_same_group"
+                                    <?= $cfg(['catalogue', 'restrict_checkout_reservations_to_same_group'], false) ? 'checked' : '' ?>>
+                                <label class="form-check-label fw-semibold" for="catalogue_restrict_checkout_reservations_to_same_group">
+                                    Restrict checkout users to viewing and checking out reservations only for members of their own groups.
+                                </label>
+                            </div>
+                            <div class="form-text">
+                                When enabled, checkout users can only view and check out reservations for users who share at least one local KitGrab group with them. Admin users can still view all reservations.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title mb-1">Catalogue Permissions</h5>
+                        <p class="text-muted small mb-3">Choose a group, then choose which equipment models members of that group can reserve.</p>
+
+                        <?php if ($permissionGroupsFetchError): ?>
+                            <div class="alert alert-warning small mb-3">
+                                Could not load groups: <?= h($permissionGroupsFetchError) ?>
+                            </div>
+                        <?php endif; ?>
+                        <?php if ($permissionCatalogueFetchError): ?>
+                            <div class="alert alert-warning small mb-3">
+                                Could not load requestable catalogue items: <?= h($permissionCatalogueFetchError) ?>
+                            </div>
+                        <?php endif; ?>
+
+                        <div class="border rounded p-3 mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input"
+                                       type="checkbox"
+                                       name="catalogue_show_restricted_items"
+                                       id="catalogue_show_restricted_items"
+                                    <?= $cfg(['catalogue', 'show_restricted_items'], true) ? 'checked' : '' ?>>
+                                <label class="form-check-label fw-semibold" for="catalogue_show_restricted_items">
+                                    Show restricted items in the catalogue
+                                </label>
+                            </div>
+                            <div class="form-text">
+                                When enabled, restricted items still appear but cannot be added to a basket. When disabled, restricted items are hidden from affected users.
+                            </div>
+                        </div>
+
+                        <?php if (empty($permissionGroups)): ?>
+                            <div class="text-muted small">Create one or more groups before configuring catalogue permissions.</div>
+                        <?php elseif (empty($permissionCatalogueItems)): ?>
+                            <div class="text-muted small">No requestable equipment models are available.</div>
+                        <?php else: ?>
+                            <div class="filter-panel settings-permissions-filter-panel mb-3" data-permissions-filters>
+                                <div class="row g-3 align-items-end mb-2">
+                                    <div class="col-12">
+                                        <label class="form-label mb-1 fw-semibold">Group</label>
+                                        <select name="permissions_group_id"
+                                                class="form-select"
+                                                id="permissions_group_id"
+                                                data-permissions-group-select>
+                                            <?php foreach ($permissionGroups as $permissionGroup): ?>
+                                                <?php
+                                                $permissionGroupId = (int)($permissionGroup['id'] ?? 0);
+                                                if ($permissionGroupId <= 0) {
+                                                    continue;
+                                                }
+                                                ?>
+                                                <option value="<?= $permissionGroupId ?>" <?= $selectedPermissionGroupId === $permissionGroupId ? 'selected' : '' ?>>
+                                                    <?= h((string)($permissionGroup['name'] ?? ('Group #' . $permissionGroupId))) ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="row g-3 align-items-end">
+                                    <div class="col-12 col-lg-8">
+                                        <label class="form-label mb-1 fw-semibold">Search items</label>
+                                        <input type="search"
+                                               class="form-control"
+                                               placeholder="Search by model, category, or manufacturer"
+                                               data-permissions-search>
+                                    </div>
+                                    <div class="col-12 col-lg-4">
+                                        <label class="form-label mb-1 fw-semibold">Category</label>
+                                        <select class="form-select" data-permissions-category-filter>
+                                            <option value="">All categories</option>
+                                            <?php foreach ($permissionCategoryOptions as $permissionCategoryOption): ?>
+                                                <option value="<?= h($permissionCategoryOption) ?>">
+                                                    <?= h($permissionCategoryOption) ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <div class="text-muted small" data-permissions-result-count></div>
+                                <div class="d-flex flex-wrap gap-2 mt-2">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" data-permissions-select-all>
+                                        Allow all
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" data-permissions-select-none>
+                                        Restrict all
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="table-responsive settings-permissions-table">
+                                <table class="table table-sm align-middle">
+                                    <thead>
+                                    <tr>
+                                        <th style="width: 120px;">Can reserve</th>
+                                        <th>Item</th>
+                                        <th>Category</th>
+                                        <th>Manufacturer</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    <?php foreach ($permissionCatalogueItems as $permissionItem): ?>
+                                        <?php
+                                        $permissionItemType = booking_normalize_item_type((string)($permissionItem['type'] ?? ''));
+                                        $permissionItemId = (int)($permissionItem['id'] ?? 0);
+                                        if ($permissionItemType !== 'model' || $permissionItemId <= 0) {
+                                            continue;
+                                        }
+                                        $permissionItemKey = $permissionItemType . ':' . $permissionItemId;
+                                        $permissionInputId = 'permissions_item_' . $permissionItemType . '_' . $permissionItemId;
+                                        $permissionAllowed = empty($permissionDeniedMap[$permissionItemKey]);
+                                        $permissionCategory = trim((string)($permissionItem['category'] ?? ''));
+                                        if ($permissionCategory === '') {
+                                            $permissionCategory = 'Uncategorised';
+                                        }
+                                        $permissionManufacturer = trim((string)($permissionItem['manufacturer'] ?? ''));
+                                        $permissionImagePath = trim((string)($permissionItem['image_path'] ?? ''));
+                                        $permissionSearchText = strtolower(trim(implode(' ', [
+                                            (string)($permissionItem['name'] ?? ''),
+                                            $permissionCategory,
+                                            $permissionManufacturer,
+                                        ])));
+                                        ?>
+                                        <tr data-permissions-row
+                                            data-permissions-search-text="<?= h($permissionSearchText) ?>"
+                                            data-permissions-category="<?= h($permissionCategory) ?>">
+                                            <td>
+                                                <div class="form-check form-switch mb-0">
+                                                    <input class="form-check-input"
+                                                           type="checkbox"
+                                                           role="switch"
+                                                           name="permissions_allowed_items[]"
+                                                           id="<?= h($permissionInputId) ?>"
+                                                           value="<?= h($permissionItemKey) ?>"
+                                                        <?= $permissionAllowed ? 'checked' : '' ?>
+                                                           data-permissions-item>
+                                                    <label class="form-check-label visually-hidden" for="<?= h($permissionInputId) ?>">
+                                                        Allow <?= h((string)($permissionItem['name'] ?? 'item')) ?>
+                                                    </label>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="settings-permissions-item">
+                                                    <?php if ($permissionImagePath !== ''): ?>
+                                                        <img src="<?= h($permissionImagePath) ?>"
+                                                             alt=""
+                                                             class="settings-permissions-item__thumb"
+                                                             loading="lazy">
+                                                    <?php else: ?>
+                                                        <div class="settings-permissions-item__thumb settings-permissions-item__thumb--placeholder" aria-hidden="true">-</div>
+                                                    <?php endif; ?>
+                                                    <label class="mb-0 fw-semibold settings-permissions-item__name" for="<?= h($permissionInputId) ?>">
+                                                        <?= h((string)($permissionItem['name'] ?? '')) ?>
+                                                    </label>
+                                                </div>
+                                            </td>
+                                            <td><?= h($permissionCategory) ?></td>
+                                            <td><?= h($permissionManufacturer) ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="form-text">
+                                For users in multiple groups, any restricted group blocks that item.
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -1955,7 +2212,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
     const settingsTabInput = document.getElementById('settings_tab_input');
     const settingsTabs = Array.from(document.querySelectorAll('#settings-group-tabs [data-settings-tab]'));
     const settingsSections = Array.from(form.querySelectorAll('[data-settings-group]'));
-    const settingsTabAllowed = new Set(['frontend', 'backend', 'notifications']);
+    const settingsTabAllowed = new Set(['frontend', 'backend', 'permissions', 'notifications']);
 
     const applySettingsTab = (tabName) => {
         const nextTab = settingsTabAllowed.has(tabName) ? tabName : 'frontend';
@@ -1982,6 +2239,65 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
 
     const initialTab = settingsTabInput ? settingsTabInput.value : 'frontend';
     applySettingsTab(initialTab);
+
+    const permissionsGroupSelect = form.querySelector('[data-permissions-group-select]');
+    if (permissionsGroupSelect) {
+        permissionsGroupSelect.addEventListener('change', () => {
+            const url = new URL(window.location.href);
+            url.searchParams.set('settings_tab', 'permissions');
+            url.searchParams.set('permissions_group_id', permissionsGroupSelect.value || '');
+            window.location.href = url.toString();
+        });
+    }
+
+    const permissionChecks = () => Array.from(form.querySelectorAll('[data-permissions-item]'));
+    const visiblePermissionChecks = () => Array.from(form.querySelectorAll('[data-permissions-row]:not(.d-none) [data-permissions-item]'));
+    const permissionSelectAll = form.querySelector('[data-permissions-select-all]');
+    const permissionSelectNone = form.querySelector('[data-permissions-select-none]');
+    if (permissionSelectAll) {
+        permissionSelectAll.addEventListener('click', () => {
+            visiblePermissionChecks().forEach((input) => { input.checked = true; });
+        });
+    }
+    if (permissionSelectNone) {
+        permissionSelectNone.addEventListener('click', () => {
+            visiblePermissionChecks().forEach((input) => { input.checked = false; });
+        });
+    }
+
+    const permissionSearch = form.querySelector('[data-permissions-search]');
+    const permissionCategoryFilter = form.querySelector('[data-permissions-category-filter]');
+    const permissionRows = Array.from(form.querySelectorAll('[data-permissions-row]'));
+    const permissionResultCount = form.querySelector('[data-permissions-result-count]');
+    const applyPermissionFilters = () => {
+        const q = String(permissionSearch ? permissionSearch.value : '').trim().toLowerCase();
+        const category = String(permissionCategoryFilter ? permissionCategoryFilter.value : '').trim().toLowerCase();
+        let visibleCount = 0;
+
+        permissionRows.forEach((row) => {
+            const rowText = String(row.dataset.permissionsSearchText || '');
+            const rowCategory = String(row.dataset.permissionsCategory || '').trim().toLowerCase();
+            const matchesSearch = q === '' || rowText.includes(q);
+            const matchesCategory = category === '' || rowCategory === category;
+            const visible = matchesSearch && matchesCategory;
+            row.classList.toggle('d-none', !visible);
+            row.hidden = !visible;
+            row.style.display = visible ? '' : 'none';
+            if (visible) {
+                visibleCount++;
+            }
+        });
+
+        if (permissionResultCount) {
+            permissionResultCount.textContent = visibleCount + ' of ' + permissionRows.length + ' items shown';
+        }
+    };
+    [permissionSearch, permissionCategoryFilter].forEach((control) => {
+        if (!control) return;
+        control.addEventListener('input', applyPermissionFilters);
+        control.addEventListener('change', applyPermissionFilters);
+    });
+    applyPermissionFilters();
 
     const primaryColorPicker = document.getElementById('app_primary_color_picker');
     const primaryColorInput = document.getElementById('app_primary_color');
