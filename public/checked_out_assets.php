@@ -4,6 +4,7 @@ require_once SRC_PATH . '/auth.php';
 require_once SRC_PATH . '/inventory_client.php';
 require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/activity_log.php';
+require_once SRC_PATH . '/staff_group_visibility.php';
 require_once SRC_PATH . '/layout.php';
 
 function load_asset_labels(PDO $pdo, array $assetIds): array
@@ -100,6 +101,8 @@ function expected_to_timestamp($value): ?int
 $active    = basename($_SERVER['PHP_SELF']);
 $isAdmin   = !empty($currentUser['is_admin']);
 $isStaff   = !empty($currentUser['is_staff']) || $isAdmin;
+$config    = load_config();
+$restrictCheckedOutToSameGroup = staff_group_visibility_restriction_enabled($config, $currentUser);
 $embedded  = defined('RESERVATIONS_EMBED');
 $pageBase  = $embedded ? 'reservations.php' : 'checked_out_assets.php';
 $baseQuery = $embedded ? ['tab' => 'checked_out'] : [];
@@ -109,6 +112,30 @@ if (!$isStaff) {
     http_response_code(403);
     echo 'Access denied.';
     exit;
+}
+
+function checked_out_asset_visible(PDO $pdo, int $assetId, array $currentUser, bool $restrictionEnabled): bool
+{
+    if (!$restrictionEnabled) {
+        return true;
+    }
+    if ($assetId <= 0) {
+        return false;
+    }
+
+    $stmt = $pdo->prepare('
+        SELECT assigned_to_email
+          FROM checked_out_asset_cache
+         WHERE asset_id = :asset_id
+         LIMIT 1
+    ');
+    $stmt->execute([':asset_id' => $assetId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        return false;
+    }
+
+    return staff_group_visibility_checked_out_row_visible($row, $currentUser, $restrictionEnabled);
 }
 
 $viewRaw = $_REQUEST['view'] ?? ($_REQUEST['tab'] ?? 'all');
@@ -156,6 +183,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $normalized = normalize_expected_datetime($renewExpected);
         if ($renewId > 0 && $normalized !== '') {
             try {
+                if (!checked_out_asset_visible($pdo, $renewId, $currentUser, $restrictCheckedOutToSameGroup)) {
+                    throw new RuntimeException('You do not have access to that checked-out asset.');
+                }
                 update_asset_expected_checkin($renewId, $normalized);
                 $messages[] = "Extended expected check-in to " . format_display_datetime($normalized) . " for asset #{$renewId}.";
                 $labels = load_asset_labels($pdo, [$renewId]);
@@ -190,6 +220,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 foreach ($bulkIds as $idRaw) {
                     $aid = (int)$idRaw;
                     if ($aid > 0) {
+                        if (!checked_out_asset_visible($pdo, $aid, $currentUser, $restrictCheckedOutToSameGroup)) {
+                            throw new RuntimeException('You do not have access to one or more selected checked-out assets.');
+                        }
                         update_asset_expected_checkin($aid, $bulkExpected);
                         $count++;
                     }
@@ -218,6 +251,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 try {
     $assets = list_checked_out_assets(false);
+    if ($restrictCheckedOutToSameGroup) {
+        $assets = array_values(array_filter(
+            $assets,
+            static function (array $row) use ($currentUser, $restrictCheckedOutToSameGroup): bool {
+                return staff_group_visibility_checked_out_row_visible($row, $currentUser, $restrictCheckedOutToSameGroup);
+            }
+        ));
+    }
     if ($view === 'overdue') {
         $now = time();
         $assets = array_values(array_filter($assets, function ($row) use ($now) {

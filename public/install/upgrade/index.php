@@ -205,7 +205,7 @@ function upgrade_stream_database_backup(PDO $pdo, string $databaseName, string $
     echo "COMMIT;\n";
 }
 
-$targetVersion = '0.12.0-Beta';
+$targetVersion = '1.0.5';
 $configExists = is_file($configPath) || is_file($legacyConfigPath);
 $messages = [];
 $errors = [];
@@ -260,6 +260,125 @@ $migrations = [
                     UNIQUE KEY uq_user_favourite_models_user_model (user_email, model_id),
                     KEY idx_user_favourite_models_user (user_email),
                     KEY idx_user_favourite_models_model (model_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        },
+    ],
+    [
+        'version' => '1.0.0',
+        'label' => 'Add user groups',
+        'is_applied' => static function (PDO $pdo, array $appliedVersions): bool {
+            try {
+                $pdo->query('SELECT id, is_admin, is_staff FROM user_groups LIMIT 1');
+                $pdo->query('SELECT 1 FROM user_group_members LIMIT 1');
+                return isset($appliedVersions['1.0.0']);
+            } catch (Throwable $e) {
+                return false;
+            }
+        },
+        'run' => static function (PDO $pdo): void {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS user_groups (
+                    id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT DEFAULT NULL,
+                    is_admin TINYINT(1) NOT NULL DEFAULT 0,
+                    is_staff TINYINT(1) NOT NULL DEFAULT 0,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                    PRIMARY KEY (id),
+                    UNIQUE KEY uq_user_groups_name (name)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS user_group_members (
+                    user_id INT UNSIGNED NOT NULL,
+                    group_id INT UNSIGNED NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                    PRIMARY KEY (user_id, group_id),
+                    KEY idx_user_group_members_group (group_id),
+                    CONSTRAINT fk_user_group_members_user
+                        FOREIGN KEY (user_id)
+                        REFERENCES users (id)
+                        ON DELETE CASCADE,
+                    CONSTRAINT fk_user_group_members_group
+                        FOREIGN KEY (group_id)
+                        REFERENCES user_groups (id)
+                        ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+            $columnExists = static function (PDO $pdo, string $table, string $column): bool {
+                $stmt = $pdo->prepare("SHOW COLUMNS FROM `$table` LIKE :column");
+                $stmt->execute([':column' => $column]);
+                return (bool)$stmt->fetch(PDO::FETCH_ASSOC);
+            };
+            if (!$columnExists($pdo, 'user_groups', 'is_admin')) {
+                $pdo->exec('ALTER TABLE user_groups ADD COLUMN is_admin TINYINT(1) NOT NULL DEFAULT 0 AFTER description');
+            }
+            if (!$columnExists($pdo, 'user_groups', 'is_staff')) {
+                $pdo->exec('ALTER TABLE user_groups ADD COLUMN is_staff TINYINT(1) NOT NULL DEFAULT 0 AFTER is_admin');
+            }
+            $pdo->exec("
+                INSERT INTO user_groups (name, description, is_admin, is_staff, created_at)
+                SELECT 'Administrators', 'Users in this group have admin access.', 1, 1, NOW()
+                WHERE EXISTS (SELECT 1 FROM users WHERE is_admin = 1)
+                ON DUPLICATE KEY UPDATE is_admin = 1, is_staff = 1
+            ");
+            $pdo->exec("
+                INSERT IGNORE INTO user_group_members (user_id, group_id)
+                SELECT u.id, ug.id
+                  FROM users u
+                  JOIN user_groups ug ON ug.name = 'Administrators'
+                 WHERE u.is_admin = 1
+            ");
+            $pdo->exec("
+                INSERT INTO user_groups (name, description, is_admin, is_staff, created_at)
+                SELECT 'Checkout Users', 'Users in this group can check equipment in and out.', 0, 1, NOW()
+                WHERE EXISTS (SELECT 1 FROM users WHERE is_staff = 1 AND is_admin = 0)
+                ON DUPLICATE KEY UPDATE is_staff = 1
+            ");
+            $pdo->exec("
+                INSERT IGNORE INTO user_group_members (user_id, group_id)
+                SELECT u.id, ug.id
+                  FROM users u
+                  JOIN user_groups ug ON ug.name = 'Checkout Users'
+                 WHERE u.is_staff = 1
+                   AND u.is_admin = 0
+            ");
+        },
+    ],
+    [
+        'version' => '1.0.5',
+        'label' => 'Add catalogue group permissions',
+        'is_applied' => static function (PDO $pdo, array $appliedVersions): bool {
+            try {
+                $pdo->query('SELECT 1 FROM catalogue_group_restrictions LIMIT 1');
+                return isset($appliedVersions['1.0.5']);
+            } catch (Throwable $e) {
+                return false;
+            }
+        },
+        'run' => static function (PDO $pdo): void {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS catalogue_group_restrictions (
+                    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    group_id INT UNSIGNED NOT NULL,
+                    group_name VARCHAR(255) NOT NULL DEFAULT '',
+                    item_type VARCHAR(32) NOT NULL,
+                    item_id INT UNSIGNED NOT NULL,
+                    item_name_cache VARCHAR(255) NOT NULL DEFAULT '',
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+                    PRIMARY KEY (id),
+                    UNIQUE KEY uq_catalogue_group_item (group_id, item_type, item_id),
+                    KEY idx_catalogue_group_restrictions_group (group_id),
+                    KEY idx_catalogue_group_restrictions_item (item_type, item_id),
+                    CONSTRAINT fk_catalogue_group_restrictions_group
+                        FOREIGN KEY (group_id)
+                        REFERENCES user_groups (id)
+                        ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
         },

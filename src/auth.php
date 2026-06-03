@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/group_helpers.php';
 
 // auth.php
 // Simple authentication guard used by all protected pages.
@@ -62,12 +63,13 @@ if (!$isAuthenticated) {
     if (!empty($currentUser['email'])) {
         try {
             require_once SRC_PATH . '/db.php';
-            $stmt = $pdo->prepare('SELECT is_admin, is_staff FROM users WHERE email = :email LIMIT 1');
+            $stmt = $pdo->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
             $stmt->execute([':email' => strtolower(trim($currentUser['email']))]);
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
             if ($row) {
-                $currentUser['is_admin'] = !empty($row['is_admin']);
-                $currentUser['is_staff'] = !empty($row['is_staff']) || $currentUser['is_admin'];
+                $roles = group_user_roles($pdo, (int)$row['id']);
+                $currentUser['is_admin'] = !empty($roles['is_admin']);
+                $currentUser['is_staff'] = !empty($roles['is_staff']) || $currentUser['is_admin'];
                 $_SESSION['user']['is_admin'] = $currentUser['is_admin'];
                 $_SESSION['user']['is_staff'] = $currentUser['is_staff'];
             }

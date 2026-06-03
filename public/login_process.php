@@ -4,6 +4,7 @@
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/activity_log.php';
+require_once SRC_PATH . '/group_helpers.php';
 
 session_start();
 
@@ -20,7 +21,7 @@ $ldapEnabled   = array_key_exists('ldap_enabled', $authCfg) ? !empty($authCfg['l
 $googleEnabled = !empty($authCfg['google_oauth_enabled']);
 $msEnabled     = !empty($authCfg['microsoft_oauth_enabled']);
 
-// Role flags are now managed in the Users admin page (users table).
+// Role flags are managed by group membership.
 
 $provider = strtolower($_GET['provider'] ?? $_POST['provider'] ?? 'local');
 
@@ -189,24 +190,7 @@ $upsertUser = static function (PDO $pdo, string $email, string $firstName, strin
 };
 
 $loadLocalRoles = static function (PDO $pdo, int $userId): array {
-    $roles = [
-        'is_admin' => false,
-        'is_staff' => false,
-    ];
-
-    try {
-        $stmt = $pdo->prepare('SELECT is_admin, is_staff FROM users WHERE id = :id LIMIT 1');
-        $stmt->execute([':id' => $userId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($row) {
-            $roles['is_admin'] = !empty($row['is_admin']);
-            $roles['is_staff'] = !empty($row['is_staff']);
-        }
-    } catch (Throwable $e) {
-        // Ignore missing columns on older installs.
-    }
-
-    return $roles;
+    return group_user_roles($pdo, $userId);
 };
 
 $fetchLocalUser = static function (PDO $pdo, string $identifier): ?array {
@@ -252,8 +236,9 @@ if ($provider === 'local') {
     $firstName = $user['first_name'] ?? $displayName;
     $lastName = $user['last_name'] ?? '';
 
-    $isAdmin = !empty($user['is_admin']);
-    $isStaff = !empty($user['is_staff']) || $isAdmin;
+    $localRoles = $loadLocalRoles($pdo, (int)$user['id']);
+    $isAdmin = !empty($localRoles['is_admin']);
+    $isStaff = !empty($localRoles['is_staff']) || $isAdmin;
 
     $_SESSION['user'] = [
         'id'           => (int)$user['id'],
@@ -813,7 +798,7 @@ if ($fullName === '') {
 }
 
 // ------------------------------------------------------------------
-// Staff check handled via users table.
+// Staff check handled via group membership.
 // ------------------------------------------------------------------
 $isAdmin = false;
 $isStaff = false;
@@ -832,7 +817,7 @@ try {
 }
 
 // ------------------------------------------------------------------
-// Local role override (if stored in users table)
+// Local role override from group membership.
 // ------------------------------------------------------------------
 $localRoles = $loadLocalRoles($pdo, $userId);
 if ($localRoles['is_admin']) {

@@ -4,11 +4,14 @@ require_once SRC_PATH . '/auth.php';
 require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/booking_helpers.php';
 require_once SRC_PATH . '/activity_log.php';
+require_once SRC_PATH . '/staff_group_visibility.php';
 require_once SRC_PATH . '/layout.php';
 
 $active    = basename($_SERVER['PHP_SELF']);
 $isAdmin   = !empty($currentUser['is_admin']);
 $isStaff   = !empty($currentUser['is_staff']) || $isAdmin;
+$config    = load_config();
+$restrictReservationsToSameGroup = staff_group_visibility_restriction_enabled($config, $currentUser);
 $embedded  = defined('RESERVATIONS_EMBED');
 $pageBase  = $embedded ? 'reservations.php' : 'staff_reservations.php';
 $baseQuery = $embedded ? ['tab' => 'history'] : [];
@@ -82,6 +85,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resto
 
             if (!$reservation || ($reservation['status'] ?? '') !== 'missed') {
                 throw new Exception('Reservation is not in a missed state.');
+            }
+            if (!staff_group_visibility_reservation_visible($reservation, $currentUser, $restrictReservationsToSameGroup)) {
+                throw new Exception('You do not have access to that reservation.');
             }
 
             $start = $reservation['start_datetime'] ?? '';
@@ -207,6 +213,21 @@ try {
     if ($dateTo !== null) {
         $where[] = 'end_datetime <= :to';
         $params[':to'] = $dateTo . ' 23:59:59';
+    }
+
+    if ($restrictReservationsToSameGroup) {
+        $visibleEmails = staff_group_visibility_visible_user_emails_for_current_user($currentUser, true);
+        if (empty($visibleEmails)) {
+            $where[] = '1 = 0';
+        } else {
+            $emailPlaceholders = [];
+            foreach (array_values($visibleEmails) as $idx => $email) {
+                $paramName = ':visible_email_' . $idx;
+                $emailPlaceholders[] = $paramName;
+                $params[$paramName] = strtolower(trim((string)$email));
+            }
+            $where[] = 'LOWER(user_email) IN (' . implode(',', $emailPlaceholders) . ')';
+        }
     }
 
     $sql = "SELECT * FROM reservations";

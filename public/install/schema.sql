@@ -32,6 +32,38 @@ CREATE TABLE IF NOT EXISTS users (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------
+-- User groups
+-- ------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_groups (
+    id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL,
+    description TEXT DEFAULT NULL,
+    is_admin TINYINT(1) NOT NULL DEFAULT 0,
+    is_staff TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_user_groups_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS user_group_members (
+    user_id INT UNSIGNED NOT NULL,
+    group_id INT UNSIGNED NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (user_id, group_id),
+    KEY idx_user_group_members_group (group_id),
+    CONSTRAINT fk_user_group_members_user
+        FOREIGN KEY (user_id)
+        REFERENCES users (id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_user_group_members_group
+        FOREIGN KEY (group_id)
+        REFERENCES user_groups (id)
+        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------
 -- Asset categories
 -- ------------------------------------------------------
 CREATE TABLE IF NOT EXISTS asset_categories (
@@ -219,6 +251,30 @@ CREATE TABLE IF NOT EXISTS user_favourite_models (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------
+-- Catalogue group restrictions
+-- (local group-level reservation permissions)
+-- ------------------------------------------------------
+CREATE TABLE IF NOT EXISTS catalogue_group_restrictions (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    group_id INT UNSIGNED NOT NULL,
+    group_name VARCHAR(255) NOT NULL DEFAULT '',
+    item_type VARCHAR(32) NOT NULL,
+    item_id INT UNSIGNED NOT NULL,
+    item_name_cache VARCHAR(255) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_catalogue_group_item (group_id, item_type, item_id),
+    KEY idx_catalogue_group_restrictions_group (group_id),
+    KEY idx_catalogue_group_restrictions_item (item_type, item_id),
+    CONSTRAINT fk_catalogue_group_restrictions_group
+        FOREIGN KEY (group_id)
+        REFERENCES user_groups (id)
+        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------
 -- Optional: simple schema versioning
 -- ------------------------------------------------------
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -232,4 +288,6 @@ CREATE TABLE IF NOT EXISTS schema_version (
 
 INSERT IGNORE INTO schema_version (version)
 VALUES ('0.10.0 (Beta)'),
-       ('0.12.0-Beta');
+       ('0.12.0-Beta'),
+       ('1.0.0'),
+       ('1.0.5');

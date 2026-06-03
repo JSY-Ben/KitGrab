@@ -7,6 +7,7 @@ require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/inventory_client.php';
 require_once SRC_PATH . '/layout.php';
 require_once SRC_PATH . '/favourites.php';
+require_once SRC_PATH . '/catalogue_permissions.php';
 
 $config   = load_config();
 $catalogueCfg = $config['catalogue'] ?? [];
@@ -20,6 +21,11 @@ $msEnabled     = !empty($authCfg['microsoft_oauth_enabled']);
 
 $bookingOverride = $isAuthenticated ? ($_SESSION['booking_user_override'] ?? null) : null;
 $activeUser      = $bookingOverride ?: $currentUser;
+$catalogueUserGroupIds = $isAuthenticated ? catalogue_permissions_user_group_ids($activeUser) : [];
+$catalogueDeniedPermissionMap = $isAuthenticated ? catalogue_permissions_denied_item_map_for_groups($catalogueUserGroupIds) : [];
+$catalogueShowRestrictedItems = array_key_exists('show_restricted_items', $catalogueCfg)
+    ? !empty($catalogueCfg['show_restricted_items'])
+    : true;
 
 $ldapCfg  = $config['ldap'] ?? [];
 $appCfg   = $config['app'] ?? [];
@@ -780,6 +786,23 @@ function format_location_availability_summary(array $locationCounts): string
     return '(' . implode(', ', $parts) . ')';
 }
 
+function catalogue_category_id_map_from_models(array $models): array
+{
+    $categoryIds = [];
+    foreach ($models as $model) {
+        if (!is_array($model)) {
+            continue;
+        }
+
+        $categoryId = (int)($model['category']['id'] ?? ($model['category_id'] ?? 0));
+        if ($categoryId > 0) {
+            $categoryIds[$categoryId] = true;
+        }
+    }
+
+    return $categoryIds;
+}
+
 function fetch_catalogue_model_bookings(PDO $pdo, int $modelId, array $assetIds): array
 {
     $allowedStatuses = ['pending', 'confirmed', 'completed', 'missed'];
@@ -1109,6 +1132,8 @@ $models      = [];
 $modelErr    = '';
 $totalModels = 0;
 $totalPages  = 1;
+$cataloguePermissionFetchLimit = 10000;
+$catalogueHideRestrictedItems = !$catalogueShowRestrictedItems && !empty($catalogueDeniedPermissionMap);
 $nowIso      = date('Y-m-d H:i:s');
 $windowStartIso = $windowActive ? date('Y-m-d H:i:s', $windowStartTs) : '';
 $windowEndIso   = $windowActive ? date('Y-m-d H:i:s', $windowEndTs) : '';
@@ -1191,6 +1216,45 @@ if ($isAuthenticated) {
     $favouritesOnly = false;
 }
 
+if ($catalogueHideRestrictedItems && !empty($categories)) {
+    try {
+        $categoryModelAllowlist = $favouritesOnly ? $favouriteModelIds : [];
+        $categoryScopeData = ($favouritesOnly && empty($categoryModelAllowlist))
+            ? ['rows' => [], 'total' => 0]
+            : get_bookable_models(
+                1,
+                $search ?? '',
+                null,
+                $sort,
+                $cataloguePermissionFetchLimit,
+                $allowedCategoryIds,
+                true,
+                $categoryModelAllowlist
+            );
+
+        $categoryScopeRows = isset($categoryScopeData['rows']) && is_array($categoryScopeData['rows'])
+            ? $categoryScopeData['rows']
+            : [];
+        $categoryScopeRows = array_values(array_filter($categoryScopeRows, static function (array $model) use ($catalogueDeniedPermissionMap): bool {
+            $modelId = (int)($model['id'] ?? 0);
+            return $modelId <= 0 || empty($catalogueDeniedPermissionMap['model:' . $modelId]);
+        }));
+
+        $visibleCategoryIds = catalogue_category_id_map_from_models($categoryScopeRows);
+        $categories = array_values(array_filter($categories, static function (array $cat) use ($visibleCategoryIds): bool {
+            $categoryId = (int)($cat['id'] ?? 0);
+            return $categoryId > 0 && !empty($visibleCategoryIds[$categoryId]);
+        }));
+
+        if ($category !== null && empty($visibleCategoryIds[$category])) {
+            $categoryRaw = '';
+            $category = null;
+        }
+    } catch (Throwable $e) {
+        // Keep the unfiltered category list if the permission-aware category pass fails.
+    }
+}
+
 // ---------------------------------------------------------------------
 // Load models from local inventory (deferred so loader shows immediately)
 // ---------------------------------------------------------------------
@@ -1202,23 +1266,41 @@ try {
             'total' => 0,
         ];
     } else {
-        $data = get_bookable_models($page, $search ?? '', $category, $sort, $perPage, $allowedCategoryIds, false, $modelAllowlist);
+        $data = get_bookable_models(
+            $catalogueHideRestrictedItems ? 1 : $page,
+            $search ?? '',
+            $category,
+            $sort,
+            $catalogueHideRestrictedItems ? $cataloguePermissionFetchLimit : $perPage,
+            $allowedCategoryIds,
+            $catalogueHideRestrictedItems,
+            $modelAllowlist
+        );
     }
 
+    $modelRows = isset($data['rows']) && is_array($data['rows']) ? $data['rows'] : [];
     if (isset($data['rows']) && is_array($data['rows'])) {
-        $models = $data['rows'];
+        if ($catalogueHideRestrictedItems) {
+            $modelRows = array_values(array_filter($modelRows, static function (array $model) use ($catalogueDeniedPermissionMap): bool {
+                $modelId = (int)($model['id'] ?? 0);
+                return $modelId <= 0 || empty($catalogueDeniedPermissionMap['model:' . $modelId]);
+            }));
+            $totalModels = count($modelRows);
+            $totalPages = $perPage > 0 ? max(1, (int)ceil($totalModels / $perPage)) : 1;
+            $page = min($page, $totalPages);
+            $models = array_slice($modelRows, ($page - 1) * $perPage, $perPage);
+        } else {
+            $models = $modelRows;
+        }
     }
 
-    if (isset($data['total'])) {
-        $totalModels = (int)$data['total'];
-    } else {
-        $totalModels = count($models);
-    }
-
-    if ($perPage > 0) {
+    if (!$catalogueHideRestrictedItems) {
+        if (isset($data['total'])) {
+            $totalModels = (int)$data['total'];
+        } else {
+            $totalModels = count($models);
+        }
         $totalPages = max(1, (int)ceil($totalModels / $perPage));
-    } else {
-        $totalPages = 1;
     }
 } catch (Throwable $e) {
     $models   = [];
@@ -1686,6 +1768,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
 
                     $displayImage = $imagePath !== '' ? $imagePath : '';
                     $isFavourite = $isAuthenticated && isset($favouriteModelMap[$modelId]);
+                    $permissionAllowed = empty($catalogueDeniedPermissionMap['model:' . $modelId]);
                     ?>
                     <div class="col-md-4">
                         <div class="card h-100 model-card model-card--details"
@@ -1768,7 +1851,16 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                                         <input type="hidden" name="end_datetime" value="<?= h($windowEndRaw) ?>">
                                     <?php endif; ?>
 
-                                    <?php if ($isRequestable && $freeNow > 0): ?>
+                                    <?php if (!$permissionAllowed): ?>
+                                        <div class="alert alert-warning small mb-0">
+                                            You do not have permission to reserve this item.
+                                        </div>
+                                        <button type="button"
+                                                class="btn btn-sm btn-secondary w-100 mt-2"
+                                                disabled>
+                                            Add to basket
+                                        </button>
+                                    <?php elseif ($isRequestable && $freeNow > 0): ?>
                                         <div class="row g-2 align-items-center mb-2">
                                             <div class="col-6">
                                                 <label class="form-label mb-0 small">Quantity</label>
