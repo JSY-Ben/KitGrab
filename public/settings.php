@@ -544,6 +544,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $catalogue['show_available_locations'] = isset($_POST['catalogue_show_available_locations']);
     $catalogue['allow_public_view'] = isset($_POST['catalogue_allow_public_view']);
     $catalogue['show_restricted_items'] = isset($_POST['catalogue_show_restricted_items']);
+    $catalogue['restrict_checkout_reservations_to_same_group'] = isset($_POST['catalogue_restrict_checkout_reservations_to_same_group']);
 
     $smtp = $config['smtp'] ?? [];
     $smtp['host']       = $post('smtp_host', $smtp['host'] ?? '');
@@ -1205,6 +1206,29 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
             </div>
 
             <div class="col-12<?= $settingsTab === 'permissions' ? '' : ' d-none' ?>" data-settings-group="permissions">
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title mb-1">Checkout User Permissions</h5>
+                        <p class="text-muted small mb-3">Control which reservations checkout users can access in the staff reservation tabs.</p>
+
+                        <div class="border rounded p-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input"
+                                       type="checkbox"
+                                       name="catalogue_restrict_checkout_reservations_to_same_group"
+                                       id="catalogue_restrict_checkout_reservations_to_same_group"
+                                    <?= $cfg(['catalogue', 'restrict_checkout_reservations_to_same_group'], false) ? 'checked' : '' ?>>
+                                <label class="form-check-label fw-semibold" for="catalogue_restrict_checkout_reservations_to_same_group">
+                                    Restrict checkout users to viewing and checking out reservations only for members of their own groups.
+                                </label>
+                            </div>
+                            <div class="form-text">
+                                When enabled, checkout users can only view and check out reservations for users who share at least one local KitGrab group with them. Admin users can still view all reservations.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card">
                     <div class="card-body">
                         <h5 class="card-title mb-1">Catalogue Permissions</h5>
@@ -1322,6 +1346,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                             $permissionCategory = 'Uncategorised';
                                         }
                                         $permissionManufacturer = trim((string)($permissionItem['manufacturer'] ?? ''));
+                                        $permissionImagePath = trim((string)($permissionItem['image_path'] ?? ''));
                                         $permissionSearchText = strtolower(trim(implode(' ', [
                                             (string)($permissionItem['name'] ?? ''),
                                             $permissionCategory,
@@ -1347,9 +1372,19 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                                 </div>
                                             </td>
                                             <td>
-                                                <label class="mb-0 fw-semibold" for="<?= h($permissionInputId) ?>">
-                                                    <?= h((string)($permissionItem['name'] ?? '')) ?>
-                                                </label>
+                                                <div class="settings-permissions-item">
+                                                    <?php if ($permissionImagePath !== ''): ?>
+                                                        <img src="<?= h($permissionImagePath) ?>"
+                                                             alt=""
+                                                             class="settings-permissions-item__thumb"
+                                                             loading="lazy">
+                                                    <?php else: ?>
+                                                        <div class="settings-permissions-item__thumb settings-permissions-item__thumb--placeholder" aria-hidden="true">-</div>
+                                                    <?php endif; ?>
+                                                    <label class="mb-0 fw-semibold settings-permissions-item__name" for="<?= h($permissionInputId) ?>">
+                                                        <?= h((string)($permissionItem['name'] ?? '')) ?>
+                                                    </label>
+                                                </div>
                                             </td>
                                             <td><?= h($permissionCategory) ?></td>
                                             <td><?= h($permissionManufacturer) ?></td>

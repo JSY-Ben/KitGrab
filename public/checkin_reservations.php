@@ -5,11 +5,14 @@ require_once SRC_PATH . '/inventory_client.php';
 require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/activity_log.php';
 require_once SRC_PATH . '/email.php';
+require_once SRC_PATH . '/staff_group_visibility.php';
 require_once SRC_PATH . '/layout.php';
 
 $active    = basename($_SERVER['PHP_SELF']);
 $isAdmin   = !empty($currentUser['is_admin']);
 $isStaff   = !empty($currentUser['is_staff']) || $isAdmin;
+$config    = load_config();
+$restrictCheckinToSameGroup = staff_group_visibility_restriction_enabled($config, $currentUser);
 $embedded  = defined('RESERVATIONS_EMBED');
 $pageBase  = $embedded ? 'reservations.php' : 'checkin_reservations.php';
 $baseQuery = $embedded ? ['tab' => 'checkin'] : [];
@@ -51,6 +54,9 @@ $userPerPageOptions = [10, 25, 50, 100];
 $userPerPage = in_array($userPerPageRaw, $userPerPageOptions, true) ? $userPerPageRaw : 25;
 $userList = [];
 $userTotal = 0;
+$visibleUserEmails = $restrictCheckinToSameGroup
+    ? (staff_group_visibility_visible_user_emails_for_current_user($currentUser, true) ?: [])
+    : null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $mode = $_POST['mode'] ?? '';
@@ -91,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $stmt = $pdo->prepare("
-                    SELECT asset_id, asset_tag, model_name
+                    SELECT asset_id, asset_tag, model_name, assigned_to_email
                       FROM checked_out_asset_cache
                      WHERE {$whereSql} {$assetFilterSql}
                 ");
@@ -101,6 +107,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $labels = [];
                 $notesMeta = [];
                 foreach ($rows as $row) {
+                    if (!staff_group_visibility_checked_out_row_visible($row, $currentUser, $restrictCheckinToSameGroup)) {
+                        continue;
+                    }
                     $assetId = (int)($row['asset_id'] ?? 0);
                     if ($assetId <= 0) {
                         continue;
@@ -209,6 +218,19 @@ if ($selectedUserId > 0 || $selectedUserEmail !== '' || $selectedUserNameInput !
         $filterSql = 'assigned_to_email = :email';
         $countParams = [':email' => $selectedUserEmail];
     }
+    if ($restrictCheckinToSameGroup) {
+        $selectedEmailForAccess = strtolower(trim($selectedUserEmail));
+        if ($selectedEmailForAccess === '' && $selectedUserId > 0) {
+            $userStmt = $pdo->prepare('SELECT LOWER(email) FROM users WHERE id = :id LIMIT 1');
+            $userStmt->execute([':id' => $selectedUserId]);
+            $selectedEmailForAccess = strtolower(trim((string)($userStmt->fetchColumn() ?: '')));
+        }
+        if ($selectedEmailForAccess === '' || !in_array($selectedEmailForAccess, $visibleUserEmails ?? [], true)) {
+            $errors[] = 'You do not have access to checked-out assets for that user.';
+            $filterSql = '1 = 0';
+            $countParams = [];
+        }
+    }
     $countStmt = $pdo->prepare("
         SELECT COUNT(*) AS total
           FROM checked_out_asset_cache
@@ -232,12 +254,8 @@ if ($selectedUserId > 0 || $selectedUserEmail !== '' || $selectedUserNameInput !
          ORDER BY co.asset_tag, co.asset_id
          LIMIT :limit OFFSET :offset
     ");
-    if ($selectedUserId > 0) {
-        $stmt->bindValue(':id', $selectedUserId, PDO::PARAM_INT);
-    } elseif ($selectedUserEmail !== '') {
-        $stmt->bindValue(':email', $selectedUserEmail, PDO::PARAM_STR);
-    } else {
-        $stmt->bindValue(':name', $selectedUserNameInput, PDO::PARAM_STR);
+    foreach ($countParams as $key => $value) {
+        $stmt->bindValue($key, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
     }
     $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
     $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
@@ -264,6 +282,20 @@ if ($userSearch !== '') {
         )";
     $userSearchParams[':user_q'] = '%' . $userSearch . '%';
 }
+$userVisibilitySql = '';
+if ($restrictCheckinToSameGroup) {
+    if (empty($visibleUserEmails)) {
+        $userVisibilitySql = ' AND 1 = 0';
+    } else {
+        $emailPlaceholders = [];
+        foreach (array_values($visibleUserEmails) as $idx => $email) {
+            $paramName = ':visible_user_email_' . $idx;
+            $emailPlaceholders[] = $paramName;
+            $userSearchParams[$paramName] = strtolower(trim((string)$email));
+        }
+        $userVisibilitySql = ' AND LOWER(COALESCE(u.email, co.assigned_to_email, \'\')) IN (' . implode(',', $emailPlaceholders) . ')';
+    }
+}
 
 try {
     $baseUserSql = "
@@ -281,6 +313,7 @@ try {
                 OR co.assigned_to_username <> ''
            )
            {$userSearchSql}
+           {$userVisibilitySql}
     ";
     $countStmt = $pdo->prepare("
         SELECT COUNT(*) FROM (

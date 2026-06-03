@@ -436,6 +436,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installLocked) {
             'allowed_categories' => [],
             'checked_out_affects_future_availability' => true,
             'show_available_locations' => false,
+            'restrict_checkout_reservations_to_same_group' => false,
             'allow_public_view' => false,
         ];
         $newConfig['smtp'] = [

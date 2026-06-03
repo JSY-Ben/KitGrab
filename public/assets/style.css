@@ -1267,6 +1267,37 @@ form .form-select {
     object-fit: contain;
 }
 
+.settings-permissions-item {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-width: 0;
+}
+
+.settings-permissions-item__thumb {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    border: 1px solid var(--border);
+    border-radius: 0.35rem;
+    background: #fff;
+    object-fit: contain;
+    padding: 2px;
+}
+
+.settings-permissions-item__thumb--placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #888;
+    font-size: 0.75rem;
+    background: rgba(var(--primary-rgb), 0.08);
+}
+
+.settings-permissions-item__name {
+    min-width: 0;
+}
+
 .filter-panel {
     position: relative;
     padding: 1.25rem 1.35rem;

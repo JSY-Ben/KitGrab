@@ -12,6 +12,7 @@ require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/activity_log.php';
 require_once SRC_PATH . '/booking_helpers.php';
 require_once SRC_PATH . '/inventory_client.php';
+require_once SRC_PATH . '/staff_group_visibility.php';
 require_once SRC_PATH . '/email.php';
 require_once SRC_PATH . '/layout.php';
 
@@ -24,6 +25,7 @@ $selfUrl    = $pageBase . (!empty($baseQuery) ? '?' . http_build_query($baseQuer
 $active     = basename($_SERVER['PHP_SELF']);
 $isAdmin    = !empty($currentUser['is_admin']);
 $isStaff    = !empty($currentUser['is_staff']) || $isAdmin;
+$restrictCheckoutReservationsToSameGroup = staff_group_visibility_restriction_enabled($config, $currentUser);
 $tz       = new DateTimeZone($timezone);
 $now      = new DateTime('now', $tz);
 $todayStr = $now->format('Y-m-d');
@@ -200,7 +202,16 @@ try {
         $stmt = $pdo->prepare($sql);
         $stmt->execute([':today' => $todayStr]);
     }
-    $todayBookings = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $todayBookings = array_values(array_filter(
+        $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [],
+        static function (array $reservation) use ($currentUser, $restrictCheckoutReservationsToSameGroup): bool {
+            return staff_group_visibility_reservation_visible(
+                $reservation,
+                $currentUser,
+                $restrictCheckoutReservationsToSameGroup
+            );
+        }
+    ));
 } catch (Throwable $e) {
     $todayBookings = [];
     $todayError    = $e->getMessage();
@@ -305,6 +316,20 @@ if ($selectedReservationId) {
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $selectedReservation = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    if (
+        $selectedReservation
+        && !staff_group_visibility_reservation_visible(
+            $selectedReservation,
+            $currentUser,
+            $restrictCheckoutReservationsToSameGroup
+        )
+    ) {
+        $selectedReservation = null;
+        unset($_SESSION['selected_reservation_id']);
+        $_SESSION['reservation_selected_assets'] = [];
+        $checkoutAssets = [];
+        $checkoutWarnings[] = 'You do not have access to that reservation because its user is not in one of your groups.';
+    }
 
     if ($selectedReservation) {
         $selectedStart = $selectedReservation['start_datetime'] ?? '';
