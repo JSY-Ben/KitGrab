@@ -4,6 +4,19 @@
 
 require_once __DIR__ . '/inventory_client.php';
 
+function booking_normalize_item_type(string $type): string
+{
+    $type = strtolower(trim($type));
+    if (in_array($type, ['model', 'equipment', 'asset_model'], true)) {
+        return 'model';
+    }
+    if (in_array($type, ['accessory', 'accessories'], true)) {
+        return 'accessory';
+    }
+
+    return $type;
+}
+
 function booking_catalogue_checked_out_affects_future_availability(array $config): bool
 {
     $catalogueCfg = $config['catalogue'] ?? [];

@@ -12,6 +12,23 @@ CREATE TABLE IF NOT EXISTS user_groups (
     UNIQUE KEY uq_user_groups_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS user_group_members (
+    user_id INT UNSIGNED NOT NULL,
+    group_id INT UNSIGNED NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (user_id, group_id),
+    KEY idx_user_group_members_group (group_id),
+    CONSTRAINT fk_user_group_members_user
+        FOREIGN KEY (user_id)
+        REFERENCES users (id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_user_group_members_group
+        FOREIGN KEY (group_id)
+        REFERENCES user_groups (id)
+        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 INSERT INTO user_groups (name, description, is_admin, is_staff, created_at)
 SELECT 'Administrators', 'Users in this group have admin access.', 1, 1, NOW()
 WHERE EXISTS (SELECT 1 FROM users WHERE is_admin = 1)
@@ -34,23 +51,6 @@ SELECT u.id, ug.id
   JOIN user_groups ug ON ug.name = 'Checkout Users'
  WHERE u.is_staff = 1
    AND u.is_admin = 0;
-
-CREATE TABLE IF NOT EXISTS user_group_members (
-    user_id INT UNSIGNED NOT NULL,
-    group_id INT UNSIGNED NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    PRIMARY KEY (user_id, group_id),
-    KEY idx_user_group_members_group (group_id),
-    CONSTRAINT fk_user_group_members_user
-        FOREIGN KEY (user_id)
-        REFERENCES users (id)
-        ON DELETE CASCADE,
-    CONSTRAINT fk_user_group_members_group
-        FOREIGN KEY (group_id)
-        REFERENCES user_groups (id)
-        ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS schema_version (
     id INT UNSIGNED NOT NULL AUTO_INCREMENT,

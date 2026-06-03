@@ -104,6 +104,21 @@ if (!function_exists('layout_known_database_upgrades')) {
                     }
                 },
             ],
+            [
+                'version' => '1.0.5',
+                'description' => 'Add catalogue group permissions.',
+                'is_applied' => static function (PDO $pdo): bool {
+                    try {
+                        $stmt = $pdo->prepare('SELECT 1 FROM schema_version WHERE version = :version LIMIT 1');
+                        $stmt->execute([':version' => '1.0.5']);
+                        $versionApplied = (bool)$stmt->fetchColumn();
+                        $pdo->query('SELECT 1 FROM catalogue_group_restrictions LIMIT 1');
+                        return $versionApplied;
+                    } catch (Throwable $e) {
+                        return false;
+                    }
+                },
+            ],
         ];
     }
 }

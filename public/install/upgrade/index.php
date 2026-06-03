@@ -205,7 +205,7 @@ function upgrade_stream_database_backup(PDO $pdo, string $databaseName, string $
     echo "COMMIT;\n";
 }
 
-$targetVersion = '1.0.0';
+$targetVersion = '1.0.5';
 $configExists = is_file($configPath) || is_file($legacyConfigPath);
 $messages = [];
 $errors = [];
@@ -345,6 +345,41 @@ $migrations = [
                   JOIN user_groups ug ON ug.name = 'Checkout Users'
                  WHERE u.is_staff = 1
                    AND u.is_admin = 0
+            ");
+        },
+    ],
+    [
+        'version' => '1.0.5',
+        'label' => 'Add catalogue group permissions',
+        'is_applied' => static function (PDO $pdo, array $appliedVersions): bool {
+            try {
+                $pdo->query('SELECT 1 FROM catalogue_group_restrictions LIMIT 1');
+                return isset($appliedVersions['1.0.5']);
+            } catch (Throwable $e) {
+                return false;
+            }
+        },
+        'run' => static function (PDO $pdo): void {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS catalogue_group_restrictions (
+                    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    group_id INT UNSIGNED NOT NULL,
+                    group_name VARCHAR(255) NOT NULL DEFAULT '',
+                    item_type VARCHAR(32) NOT NULL,
+                    item_id INT UNSIGNED NOT NULL,
+                    item_name_cache VARCHAR(255) NOT NULL DEFAULT '',
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+                    PRIMARY KEY (id),
+                    UNIQUE KEY uq_catalogue_group_item (group_id, item_type, item_id),
+                    KEY idx_catalogue_group_restrictions_group (group_id),
+                    KEY idx_catalogue_group_restrictions_item (item_type, item_id),
+                    CONSTRAINT fk_catalogue_group_restrictions_group
+                        FOREIGN KEY (group_id)
+                        REFERENCES user_groups (id)
+                        ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
         },
     ],

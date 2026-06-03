@@ -7,6 +7,7 @@ require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/inventory_client.php';
 require_once SRC_PATH . '/layout.php';
 require_once SRC_PATH . '/favourites.php';
+require_once SRC_PATH . '/catalogue_permissions.php';
 
 $config   = load_config();
 $catalogueCfg = $config['catalogue'] ?? [];
@@ -20,6 +21,11 @@ $msEnabled     = !empty($authCfg['microsoft_oauth_enabled']);
 
 $bookingOverride = $isAuthenticated ? ($_SESSION['booking_user_override'] ?? null) : null;
 $activeUser      = $bookingOverride ?: $currentUser;
+$catalogueUserGroupIds = $isAuthenticated ? catalogue_permissions_user_group_ids($activeUser) : [];
+$catalogueDeniedPermissionMap = $isAuthenticated ? catalogue_permissions_denied_item_map_for_groups($catalogueUserGroupIds) : [];
+$catalogueShowRestrictedItems = array_key_exists('show_restricted_items', $catalogueCfg)
+    ? !empty($catalogueCfg['show_restricted_items'])
+    : true;
 
 $ldapCfg  = $config['ldap'] ?? [];
 $appCfg   = $config['app'] ?? [];
@@ -1207,6 +1213,12 @@ try {
 
     if (isset($data['rows']) && is_array($data['rows'])) {
         $models = $data['rows'];
+        if (!$catalogueShowRestrictedItems && !empty($catalogueDeniedPermissionMap)) {
+            $models = array_values(array_filter($models, static function (array $model) use ($catalogueDeniedPermissionMap): bool {
+                $modelId = (int)($model['id'] ?? 0);
+                return $modelId <= 0 || empty($catalogueDeniedPermissionMap['model:' . $modelId]);
+            }));
+        }
     }
 
     if (isset($data['total'])) {
@@ -1686,6 +1698,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
 
                     $displayImage = $imagePath !== '' ? $imagePath : '';
                     $isFavourite = $isAuthenticated && isset($favouriteModelMap[$modelId]);
+                    $permissionAllowed = empty($catalogueDeniedPermissionMap['model:' . $modelId]);
                     ?>
                     <div class="col-md-4">
                         <div class="card h-100 model-card model-card--details"
@@ -1768,7 +1781,16 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                                         <input type="hidden" name="end_datetime" value="<?= h($windowEndRaw) ?>">
                                     <?php endif; ?>
 
-                                    <?php if ($isRequestable && $freeNow > 0): ?>
+                                    <?php if (!$permissionAllowed): ?>
+                                        <div class="alert alert-warning small mb-0">
+                                            You do not have permission to reserve this item.
+                                        </div>
+                                        <button type="button"
+                                                class="btn btn-sm btn-secondary w-100 mt-2"
+                                                disabled>
+                                            Add to basket
+                                        </button>
+                                    <?php elseif ($isRequestable && $freeNow > 0): ?>
                                         <div class="row g-2 align-items-center mb-2">
                                             <div class="col-6">
                                                 <label class="form-label mb-0 small">Quantity</label>
