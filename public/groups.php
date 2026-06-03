@@ -29,6 +29,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $name = trim($_POST['name'] ?? '');
         $description = trim($_POST['description'] ?? '');
         $userIds = group_normalize_ids($_POST['user_ids'] ?? []);
+        $isAdminFlag = isset($_POST['is_admin']);
+        $isStaffFlag = isset($_POST['is_staff']) || $isAdminFlag;
 
         if ($name === '') {
             $errors[] = 'Group name is required.';
@@ -49,12 +51,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmt = $pdo->prepare('
                         UPDATE user_groups
                            SET name = :name,
-                               description = :description
+                               description = :description,
+                               is_admin = :is_admin,
+                               is_staff = :is_staff
                          WHERE id = :id
                     ');
                     $stmt->execute([
                         ':name' => $name,
                         ':description' => $description !== '' ? $description : null,
+                        ':is_admin' => $isAdminFlag ? 1 : 0,
+                        ':is_staff' => $isStaffFlag ? 1 : 0,
                         ':id' => $groupId,
                     ]);
                     if ($stmt->rowCount() === 0) {
@@ -68,12 +74,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $messages[] = 'Group updated.';
                 } else {
                     $stmt = $pdo->prepare('
-                        INSERT INTO user_groups (name, description, created_at)
-                        VALUES (:name, :description, NOW())
+                        INSERT INTO user_groups (name, description, is_admin, is_staff, created_at)
+                        VALUES (:name, :description, :is_admin, :is_staff, NOW())
                     ');
                     $stmt->execute([
                         ':name' => $name,
                         ':description' => $description !== '' ? $description : null,
+                        ':is_admin' => $isAdminFlag ? 1 : 0,
+                        ':is_staff' => $isStaffFlag ? 1 : 0,
                     ]);
                     $groupId = (int)$pdo->lastInsertId();
                     group_replace_group_members($pdo, $groupId, $userIds);
@@ -124,6 +132,8 @@ if ($groupsAvailable) {
             SELECT ug.id,
                    ug.name,
                    ug.description,
+                   ug.is_admin,
+                   ug.is_staff,
                    ug.created_at,
                    COALESCE(member_counts.member_count, 0) AS member_count
               FROM user_groups ug
@@ -157,27 +167,40 @@ if ($groupsAvailable) {
     }
 }
 
-$renderUserCheckboxes = static function (array $users, array $selectedUserIds, string $prefix): void {
+$renderUserPicker = static function (array $users, array $selectedUserIds, string $prefix): void {
     if (empty($users)) {
         echo '<div class="text-muted small">No users found yet.</div>';
         return;
     }
 
-    echo '<div class="row g-2">';
+    $pickerUsers = [];
     foreach ($users as $user) {
         $userId = (int)$user['id'];
         $display = trim((string)($user['first_name'] ?? '') . ' ' . (string)($user['last_name'] ?? ''));
         if ($display === '') {
             $display = (string)($user['email'] ?? '');
         }
-        $fieldId = $prefix . '_' . $userId;
-        echo '<div class="col-md-6"><div class="form-check">';
-        echo '<input class="form-check-input" type="checkbox" name="user_ids[]" value="' . $userId . '" id="' . h($fieldId) . '"'
-            . (in_array($userId, $selectedUserIds, true) ? ' checked' : '') . '>';
-        echo '<label class="form-check-label" for="' . h($fieldId) . '">'
-            . h($display) . ' <span class="text-muted">(' . h($user['email'] ?? '') . ')</span></label>';
-        echo '</div></div>';
+        $email = (string)($user['email'] ?? '');
+        $pickerUsers[] = [
+            'id' => $userId,
+            'label' => $display,
+            'email' => $email,
+            'search' => strtolower(trim($display . ' ' . $email . ' ' . (string)($user['username'] ?? ''))),
+        ];
     }
+
+    $selectedUserIds = group_normalize_ids($selectedUserIds);
+    $usersJson = htmlspecialchars(json_encode($pickerUsers, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT), ENT_QUOTES, 'UTF-8');
+    $selectedJson = htmlspecialchars(json_encode($selectedUserIds, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT), ENT_QUOTES, 'UTF-8');
+
+    echo '<div class="user-picker" data-user-picker data-users="' . $usersJson . '" data-selected="' . $selectedJson . '">';
+    echo '<div class="user-picker__selected" data-user-picker-selected></div>';
+    echo '<div class="position-relative">';
+    echo '<input type="text" class="form-control" id="' . h($prefix . '_search') . '" data-user-picker-input placeholder="Search users by name, email, or username" autocomplete="off">';
+    echo '<div class="user-picker__results list-group shadow-sm" data-user-picker-results hidden></div>';
+    echo '</div>';
+    echo '<div class="text-muted small mt-2" data-user-picker-empty>No users selected.</div>';
+    echo '<div data-user-picker-inputs></div>';
     echo '</div>';
 };
 ?>
@@ -191,6 +214,49 @@ $renderUserCheckboxes = static function (array $users, array $selectedUserIds, s
           href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="assets/style.css">
     <?= layout_theme_styles() ?>
+    <style>
+        .user-picker__selected {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .5rem;
+            margin-bottom: .75rem;
+            min-height: 2rem;
+        }
+        .user-picker__badge {
+            align-items: center;
+            background: #eef2f7;
+            border: 1px solid #d7dee8;
+            border-radius: 999px;
+            display: inline-flex;
+            gap: .4rem;
+            max-width: 100%;
+            padding: .3rem .55rem;
+        }
+        .user-picker__badge-label {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .user-picker__remove {
+            align-items: center;
+            border-radius: 999px;
+            display: inline-flex;
+            height: 1.2rem;
+            justify-content: center;
+            line-height: 1;
+            padding: 0;
+            width: 1.2rem;
+        }
+        .user-picker__results {
+            left: 0;
+            max-height: 16rem;
+            overflow-y: auto;
+            position: absolute;
+            right: 0;
+            top: calc(100% + .25rem);
+            z-index: 1060;
+        }
+    </style>
 </head>
 <body class="p-4">
 <div class="container">
@@ -255,6 +321,7 @@ $renderUserCheckboxes = static function (array $users, array $selectedUserIds, s
                                 <tr>
                                     <th>Name</th>
                                     <th>Description</th>
+                                    <th>Role</th>
                                     <th>Members</th>
                                     <th>Created</th>
                                     <th></th>
@@ -270,6 +337,15 @@ $renderUserCheckboxes = static function (array $users, array $selectedUserIds, s
                                     <tr>
                                         <td><?= h($group['name'] ?? '') ?></td>
                                         <td><?= h($group['description'] ?? '') ?></td>
+                                        <td>
+                                            <?php if (!empty($group['is_admin'])): ?>
+                                                Admin
+                                            <?php elseif (!empty($group['is_staff'])): ?>
+                                                Checkout user
+                                            <?php else: ?>
+                                                <span class="text-muted">None</span>
+                                            <?php endif; ?>
+                                        </td>
                                         <td><?= (int)($group['member_count'] ?? 0) ?></td>
                                         <td><?= h($createdAt) ?></td>
                                         <td class="text-end">
@@ -311,9 +387,21 @@ $renderUserCheckboxes = static function (array $users, array $selectedUserIds, s
                             <label class="form-label">Description</label>
                             <textarea name="description" class="form-control" rows="3"></textarea>
                         </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_admin" id="create_group_is_admin">
+                                <label class="form-check-label" for="create_group_is_admin">Admin</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_staff" id="create_group_is_staff">
+                                <label class="form-check-label" for="create_group_is_staff">Checkout user</label>
+                            </div>
+                        </div>
                         <div class="col-12">
                             <label class="form-label">Users</label>
-                            <?php $renderUserCheckboxes($users, [], 'create_group_user'); ?>
+                            <?php $renderUserPicker($users, [], 'create_group_user'); ?>
                         </div>
                     </div>
                 </div>
@@ -347,9 +435,21 @@ $renderUserCheckboxes = static function (array $users, array $selectedUserIds, s
                                 <label class="form-label">Description</label>
                                 <textarea name="description" class="form-control" rows="3"><?= h($group['description'] ?? '') ?></textarea>
                             </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="is_admin" id="edit_group_is_admin_<?= $groupId ?>" <?= !empty($group['is_admin']) ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="edit_group_is_admin_<?= $groupId ?>">Admin</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="is_staff" id="edit_group_is_staff_<?= $groupId ?>" <?= (!empty($group['is_staff']) || !empty($group['is_admin'])) ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="edit_group_is_staff_<?= $groupId ?>">Checkout user</label>
+                                </div>
+                            </div>
                             <div class="col-12">
                                 <label class="form-label">Users</label>
-                                <?php $renderUserCheckboxes($users, $groupMembers[$groupId] ?? [], 'edit_group_' . $groupId . '_user'); ?>
+                                <?php $renderUserPicker($users, $groupMembers[$groupId] ?? [], 'edit_group_' . $groupId . '_user'); ?>
                             </div>
                         </div>
                     </div>
@@ -362,6 +462,146 @@ $renderUserCheckboxes = static function (array $users, array $selectedUserIds, s
         </div>
     </div>
 <?php endforeach; ?>
+<script>
+    function wireUserPicker(picker) {
+        var users = [];
+        var selectedIds = [];
+        try {
+            users = JSON.parse(picker.dataset.users || '[]');
+            selectedIds = JSON.parse(picker.dataset.selected || '[]');
+        } catch (error) {
+            users = [];
+            selectedIds = [];
+        }
+
+        var selected = new Map();
+        var usersById = new Map();
+        var input = picker.querySelector('[data-user-picker-input]');
+        var selectedWrap = picker.querySelector('[data-user-picker-selected]');
+        var results = picker.querySelector('[data-user-picker-results]');
+        var hiddenInputs = picker.querySelector('[data-user-picker-inputs]');
+        var emptyText = picker.querySelector('[data-user-picker-empty]');
+        var currentMatches = [];
+
+        users.forEach(function (user) {
+            usersById.set(String(user.id), user);
+        });
+        selectedIds.forEach(function (id) {
+            var user = usersById.get(String(id));
+            if (user) {
+                selected.set(String(user.id), user);
+            }
+        });
+
+        function clearResults() {
+            results.hidden = true;
+            results.innerHTML = '';
+            currentMatches = [];
+        }
+
+        function renderSelected() {
+            selectedWrap.innerHTML = '';
+            hiddenInputs.innerHTML = '';
+            emptyText.hidden = selected.size > 0;
+
+            selected.forEach(function (user) {
+                var badge = document.createElement('span');
+                badge.className = 'user-picker__badge';
+
+                var label = document.createElement('span');
+                label.className = 'user-picker__badge-label';
+                label.textContent = user.label + ' (' + user.email + ')';
+
+                var remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'btn btn-sm btn-outline-secondary user-picker__remove';
+                remove.setAttribute('aria-label', 'Remove ' + user.label);
+                remove.innerHTML = '&times;';
+                remove.addEventListener('click', function () {
+                    selected.delete(String(user.id));
+                    renderSelected();
+                    renderResults();
+                    input.focus();
+                });
+
+                var hidden = document.createElement('input');
+                hidden.type = 'hidden';
+                hidden.name = 'user_ids[]';
+                hidden.value = user.id;
+
+                badge.appendChild(label);
+                badge.appendChild(remove);
+                selectedWrap.appendChild(badge);
+                hiddenInputs.appendChild(hidden);
+            });
+        }
+
+        function resultButton(user) {
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'list-group-item list-group-item-action';
+            button.textContent = user.label + ' (' + user.email + ')';
+            button.addEventListener('click', function () {
+                selected.set(String(user.id), user);
+                input.value = '';
+                clearResults();
+                renderSelected();
+                input.focus();
+            });
+            return button;
+        }
+
+        function renderResults() {
+            var query = input.value.trim().toLowerCase();
+            results.innerHTML = '';
+
+            if (query.length < 1) {
+                clearResults();
+                return;
+            }
+
+            var matches = users.filter(function (user) {
+                return !selected.has(String(user.id)) && (user.search || '').indexOf(query) !== -1;
+            }).slice(0, 8);
+            currentMatches = matches;
+
+            if (matches.length === 0) {
+                var empty = document.createElement('div');
+                empty.className = 'list-group-item text-muted small';
+                empty.textContent = 'No matching users.';
+                results.appendChild(empty);
+            } else {
+                matches.forEach(function (user) {
+                    results.appendChild(resultButton(user));
+                });
+            }
+            results.hidden = false;
+        }
+
+        input.addEventListener('input', renderResults);
+        input.addEventListener('focus', renderResults);
+        input.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+                clearResults();
+            } else if (event.key === 'Enter' && currentMatches.length > 0) {
+                event.preventDefault();
+                selected.set(String(currentMatches[0].id), currentMatches[0]);
+                input.value = '';
+                clearResults();
+                renderSelected();
+            }
+        });
+        document.addEventListener('click', function (event) {
+            if (!picker.contains(event.target)) {
+                clearResults();
+            }
+        });
+
+        renderSelected();
+    }
+
+    document.querySelectorAll('[data-user-picker]').forEach(wireUserPicker);
+</script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

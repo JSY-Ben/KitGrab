@@ -96,7 +96,7 @@ if (!function_exists('layout_known_database_upgrades')) {
                         $stmt = $pdo->prepare('SELECT 1 FROM schema_version WHERE version = :version LIMIT 1');
                         $stmt->execute([':version' => '1.0.0']);
                         $versionApplied = (bool)$stmt->fetchColumn();
-                        $pdo->query('SELECT 1 FROM user_groups LIMIT 1');
+                        $pdo->query('SELECT id, is_admin, is_staff FROM user_groups LIMIT 1');
                         $pdo->query('SELECT 1 FROM user_group_members LIMIT 1');
                         return $versionApplied;
                     } catch (Throwable $e) {

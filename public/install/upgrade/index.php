@@ -269,7 +269,7 @@ $migrations = [
         'label' => 'Add user groups',
         'is_applied' => static function (PDO $pdo, array $appliedVersions): bool {
             try {
-                $pdo->query('SELECT 1 FROM user_groups LIMIT 1');
+                $pdo->query('SELECT id, is_admin, is_staff FROM user_groups LIMIT 1');
                 $pdo->query('SELECT 1 FROM user_group_members LIMIT 1');
                 return isset($appliedVersions['1.0.0']);
             } catch (Throwable $e) {
@@ -282,6 +282,8 @@ $migrations = [
                     id INT UNSIGNED NOT NULL AUTO_INCREMENT,
                     name VARCHAR(255) NOT NULL,
                     description TEXT DEFAULT NULL,
+                    is_admin TINYINT(1) NOT NULL DEFAULT 0,
+                    is_staff TINYINT(1) NOT NULL DEFAULT 0,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
                     PRIMARY KEY (id),
@@ -305,6 +307,44 @@ $migrations = [
                         REFERENCES user_groups (id)
                         ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+            $columnExists = static function (PDO $pdo, string $table, string $column): bool {
+                $stmt = $pdo->prepare("SHOW COLUMNS FROM `$table` LIKE :column");
+                $stmt->execute([':column' => $column]);
+                return (bool)$stmt->fetch(PDO::FETCH_ASSOC);
+            };
+            if (!$columnExists($pdo, 'user_groups', 'is_admin')) {
+                $pdo->exec('ALTER TABLE user_groups ADD COLUMN is_admin TINYINT(1) NOT NULL DEFAULT 0 AFTER description');
+            }
+            if (!$columnExists($pdo, 'user_groups', 'is_staff')) {
+                $pdo->exec('ALTER TABLE user_groups ADD COLUMN is_staff TINYINT(1) NOT NULL DEFAULT 0 AFTER is_admin');
+            }
+            $pdo->exec("
+                INSERT INTO user_groups (name, description, is_admin, is_staff, created_at)
+                SELECT 'Administrators', 'Users in this group have admin access.', 1, 1, NOW()
+                WHERE EXISTS (SELECT 1 FROM users WHERE is_admin = 1)
+                ON DUPLICATE KEY UPDATE is_admin = 1, is_staff = 1
+            ");
+            $pdo->exec("
+                INSERT IGNORE INTO user_group_members (user_id, group_id)
+                SELECT u.id, ug.id
+                  FROM users u
+                  JOIN user_groups ug ON ug.name = 'Administrators'
+                 WHERE u.is_admin = 1
+            ");
+            $pdo->exec("
+                INSERT INTO user_groups (name, description, is_admin, is_staff, created_at)
+                SELECT 'Checkout Users', 'Users in this group can check equipment in and out.', 0, 1, NOW()
+                WHERE EXISTS (SELECT 1 FROM users WHERE is_staff = 1 AND is_admin = 0)
+                ON DUPLICATE KEY UPDATE is_staff = 1
+            ");
+            $pdo->exec("
+                INSERT IGNORE INTO user_group_members (user_id, group_id)
+                SELECT u.id, ug.id
+                  FROM users u
+                  JOIN user_groups ug ON ug.name = 'Checkout Users'
+                 WHERE u.is_staff = 1
+                   AND u.is_admin = 0
             ");
         },
     ],

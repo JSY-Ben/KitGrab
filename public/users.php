@@ -31,7 +31,7 @@ if ($exportType === 'users') {
     header('Content-Type: text/csv; charset=UTF-8');
     header('Content-Disposition: attachment; filename="users.csv"');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['id', 'first_name', 'last_name', 'email', 'username', 'is_admin', 'is_staff', 'auth_source', 'created_at']);
+    fputcsv($out, ['id', 'first_name', 'last_name', 'email', 'username', 'auth_source', 'created_at']);
     $rows = $pdo->query('
         SELECT id, first_name, last_name, email, username, is_admin, is_staff, auth_source, created_at
           FROM users
@@ -44,8 +44,6 @@ if ($exportType === 'users') {
             $row['last_name'] ?? '',
             $row['email'] ?? '',
             $row['username'] ?? '',
-            !empty($row['is_admin']) ? 1 : 0,
-            !empty($row['is_staff']) ? 1 : 0,
             $row['auth_source'] ?? 'local',
             $row['created_at'] ?? '',
         ]);
@@ -115,8 +113,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $lastName = trim($_POST['last_name'] ?? '');
         $username = trim($_POST['username'] ?? '');
         $password = $_POST['password'] ?? '';
-        $isAdminFlag = isset($_POST['is_admin']);
-        $isStaffFlag = isset($_POST['is_staff']) || $isAdminFlag;
         $selectedGroupIds = group_normalize_ids($_POST['group_ids'] ?? []);
 
         if ($email === '') {
@@ -172,21 +168,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($editId > 0) {
                     if ($editRoleOnly) {
-                        $stmt = $pdo->prepare("
-                            UPDATE users
-                               SET is_admin = :is_admin,
-                                   is_staff = :is_staff
-                             WHERE id = :id
-                        ");
-                        $stmt->execute([
-                            ':is_admin' => $isAdminFlag ? 1 : 0,
-                            ':is_staff' => $isStaffFlag ? 1 : 0,
-                            ':id' => $editId,
-                        ]);
                         if ($groupsAvailable) {
                             group_replace_user_memberships($pdo, $editId, $selectedGroupIds);
                         }
-                        $messages[] = 'User roles and groups updated.';
+                        $messages[] = 'User groups updated.';
                     } else {
                         $stmt = $pdo->prepare("
                             UPDATE users
@@ -195,8 +180,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                    last_name = :last_name,
                                    email = :email,
                                    username = :username,
-                                   is_admin = :is_admin,
-                                   is_staff = :is_staff,
                                    password_hash = :password_hash,
                                    auth_source = 'local'
                              WHERE id = :id
@@ -207,8 +190,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             ':last_name' => $lastNameValue,
                             ':email' => $email,
                             ':username' => $usernameValue,
-                            ':is_admin' => $isAdminFlag ? 1 : 0,
-                            ':is_staff' => $isStaffFlag ? 1 : 0,
                             ':password_hash' => $passwordHash,
                             ':id' => $editId,
                         ]);
@@ -228,8 +209,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':last_name' => $lastNameValue,
                         ':email' => $email,
                         ':username' => $usernameValue,
-                        ':is_admin' => $isAdminFlag ? 1 : 0,
-                        ':is_staff' => $isStaffFlag ? 1 : 0,
+                        ':is_admin' => 0,
+                        ':is_staff' => 0,
                         ':password_hash' => $passwordHash,
                     ]);
                     if ($groupsAvailable) {
@@ -271,8 +252,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $lastName = trim($row['last_name'] ?? '');
                 $username = trim($row['username'] ?? '');
                 $password = $row['password'] ?? '';
-                $isAdminFlag = !empty($row['is_admin']) && (int)$row['is_admin'] === 1;
-                $isStaffFlag = (!empty($row['is_staff']) && (int)$row['is_staff'] === 1) || $isAdminFlag;
                 if ($email === '') {
                     $rowErrors[] = 'Row ' . ($idx + 2) . ': email is required.';
                     continue;
@@ -290,14 +269,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $usernameValue = $username !== '' ? $username : null;
                     if ($existing) {
                         $isExternal = !empty($existing['auth_source']) && $existing['auth_source'] !== 'local';
-                        if ($isExternal) {
-                            $stmt = $pdo->prepare('UPDATE users SET is_admin = :is_admin, is_staff = :is_staff WHERE id = :id');
-                            $stmt->execute([
-                                ':is_admin' => $isAdminFlag ? 1 : 0,
-                                ':is_staff' => $isStaffFlag ? 1 : 0,
-                                ':id' => (int)$existing['id'],
-                            ]);
-                        } else {
+                        if (!$isExternal) {
                             $passwordHash = $password !== '' ? password_hash($password, PASSWORD_DEFAULT) : ($existing['password_hash'] ?? null);
                             $userId = sprintf('%u', crc32($email));
                             $stmt = $pdo->prepare("
@@ -307,8 +279,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                        last_name = :last_name,
                                        email = :email,
                                        username = :username,
-                                       is_admin = :is_admin,
-                                       is_staff = :is_staff,
                                        password_hash = :password_hash,
                                        auth_source = 'local'
                                  WHERE id = :id
@@ -319,8 +289,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 ':last_name' => $lastNameValue,
                                 ':email' => $email,
                                 ':username' => $usernameValue,
-                                ':is_admin' => $isAdminFlag ? 1 : 0,
-                                ':is_staff' => $isStaffFlag ? 1 : 0,
                                 ':password_hash' => $passwordHash,
                                 ':id' => (int)$existing['id'],
                             ]);
@@ -342,8 +310,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             ':last_name' => $lastNameValue,
                             ':email' => $email,
                             ':username' => $usernameValue,
-                            ':is_admin' => $isAdminFlag ? 1 : 0,
-                            ':is_staff' => $isStaffFlag ? 1 : 0,
+                            ':is_admin' => 0,
+                            ':is_staff' => 0,
                             ':password_hash' => $passwordHash,
                         ]);
                     }
@@ -506,8 +474,19 @@ if ($groupsAvailable) {
                             <tbody id="users-table">
                                 <?php foreach ($users as $user): ?>
                                     <?php
-                                    $roleLabel = !empty($user['is_admin']) ? 'Admin' : (!empty($user['is_staff']) ? 'Checkout user' : 'User');
-                                    $roleValue = !empty($user['is_admin']) ? 'admin' : (!empty($user['is_staff']) ? 'checkout' : 'user');
+                                    $memberships = $userGroups[(int)$user['id']] ?? [];
+                                    $hasAdminGroup = false;
+                                    $hasStaffGroup = false;
+                                    foreach ($memberships as $membership) {
+                                        $hasAdminGroup = $hasAdminGroup || !empty($membership['is_admin']);
+                                        $hasStaffGroup = $hasStaffGroup || !empty($membership['is_staff']);
+                                    }
+                                    if (!$groupsAvailable) {
+                                        $hasAdminGroup = !empty($user['is_admin']);
+                                        $hasStaffGroup = !empty($user['is_staff']);
+                                    }
+                                    $roleLabel = $hasAdminGroup ? 'Admin' : ($hasStaffGroup ? 'Checkout user' : 'User');
+                                    $roleValue = $hasAdminGroup ? 'admin' : ($hasStaffGroup ? 'checkout' : 'user');
                                     $sourceRaw = trim((string)($user['auth_source'] ?? ''));
                                     $sourceLabel = $sourceRaw !== '' ? ucfirst($sourceRaw) : 'Local';
                                     $sourceValue = $sourceRaw !== '' ? strtolower($sourceRaw) : 'local';
@@ -518,7 +497,7 @@ if ($groupsAvailable) {
                                     $isRoleOnly = !empty($user['auth_source']) && $user['auth_source'] !== 'local';
                                     $groupLabels = array_map(static function (array $group): string {
                                         return (string)($group['name'] ?? '');
-                                    }, $userGroups[(int)$user['id']] ?? []);
+                                    }, $memberships);
                                     $groupLabelText = implode(', ', array_filter($groupLabels, 'strlen'));
                                     ?>
                                     <tr data-first="<?= h($user['first_name'] ?? '') ?>"
@@ -589,18 +568,6 @@ if ($groupsAvailable) {
                             <label class="form-label">Password</label>
                             <input type="password" name="password" class="form-control" placeholder="Set a password" required>
                         </div>
-                        <div class="col-md-4 d-flex align-items-end">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="is_admin" id="create_is_admin">
-                                <label class="form-check-label" for="create_is_admin">Admin</label>
-                            </div>
-                        </div>
-                        <div class="col-md-4 d-flex align-items-end">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="is_staff" id="create_is_staff">
-                                <label class="form-check-label" for="create_is_staff">Checkout user</label>
-                            </div>
-                        </div>
                         <div class="col-12">
                             <label class="form-label">Groups</label>
                             <?php if (!$groupsAvailable): ?>
@@ -640,7 +607,7 @@ if ($groupsAvailable) {
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-muted small mb-3">Columns: email, first_name, last_name, username, password (required for new users), is_admin, is_staff</p>
+                    <p class="text-muted small mb-3">Columns: email, first_name, last_name, username, password (required for new users)</p>
                     <div class="mb-3">
                         <a class="btn btn-outline-secondary btn-sm" href="users.php?template=users">Download template CSV</a>
                     </div>
@@ -673,7 +640,7 @@ if ($groupsAvailable) {
                     </div>
                     <div class="modal-body">
                         <p class="text-muted small mb-3">
-                            <?= $roleOnly ? 'External users can only have Staff/Admin roles and groups updated here.' : 'Leave password blank to keep the existing password.' ?>
+                            <?= $roleOnly ? 'External users can only have groups updated here.' : 'Leave password blank to keep the existing password.' ?>
                         </p>
                         <div class="row g-3">
                             <div class="col-md-4">
@@ -695,18 +662,6 @@ if ($groupsAvailable) {
                             <div class="col-md-4">
                                 <label class="form-label">Password</label>
                                 <input type="password" name="password" class="form-control" placeholder="Set a password" <?= $roleOnly ? 'disabled' : '' ?>>
-                            </div>
-                            <div class="col-md-4 d-flex align-items-end">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="is_admin" id="edit_is_admin_<?= (int)$user['id'] ?>" <?= !empty($user['is_admin']) ? 'checked' : '' ?>>
-                                    <label class="form-check-label" for="edit_is_admin_<?= (int)$user['id'] ?>">Admin</label>
-                                </div>
-                            </div>
-                            <div class="col-md-4 d-flex align-items-end">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="is_staff" id="edit_is_staff_<?= (int)$user['id'] ?>" <?= !empty($user['is_staff']) ? 'checked' : '' ?>>
-                                    <label class="form-check-label" for="edit_is_staff_<?= (int)$user['id'] ?>">Checkout user</label>
-                                </div>
                             </div>
                             <div class="col-12">
                                 <label class="form-label">Groups</label>

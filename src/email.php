@@ -498,22 +498,12 @@ function layout_local_role_notification_recipients(bool $includeCheckoutUsers, b
 
     try {
         require_once SRC_PATH . '/db.php';
+        require_once SRC_PATH . '/group_helpers.php';
     } catch (Throwable $e) {
         return [];
     }
 
     if (!isset($pdo) || !($pdo instanceof PDO)) {
-        return [];
-    }
-
-    $clauses = [];
-    if ($includeCheckoutUsers) {
-        $clauses[] = 'is_staff = 1';
-    }
-    if ($includeAdministrators) {
-        $clauses[] = 'is_admin = 1';
-    }
-    if (empty($clauses)) {
         return [];
     }
 
@@ -525,16 +515,8 @@ function layout_local_role_notification_recipients(bool $includeCheckoutUsers, b
         }
     }
 
-    $sql = "
-        SELECT first_name, last_name, email
-          FROM users
-         WHERE email <> ''
-           AND (" . implode(' OR ', $clauses) . ")
-         ORDER BY first_name ASC, last_name ASC, email ASC
-    ";
-
     try {
-        $rows = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $rows = group_role_notification_recipients($pdo, $includeCheckoutUsers, $includeAdministrators);
     } catch (Throwable $e) {
         return [];
     }
