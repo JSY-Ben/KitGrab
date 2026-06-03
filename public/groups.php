@@ -19,6 +19,127 @@ $messages = [];
 $errors = [];
 $groupsAvailable = group_tables_exist($pdo);
 
+$readCsvUpload = static function (string $field, array &$errors): array {
+    if (empty($_FILES[$field]) || !is_array($_FILES[$field])) {
+        $errors[] = 'CSV upload is required.';
+        return [];
+    }
+    $file = $_FILES[$field];
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        $errors[] = 'CSV upload failed.';
+        return [];
+    }
+    $handle = fopen($file['tmp_name'], 'r');
+    if (!$handle) {
+        $errors[] = 'Could not read uploaded CSV.';
+        return [];
+    }
+    $header = fgetcsv($handle);
+    if (!$header) {
+        fclose($handle);
+        $errors[] = 'CSV header row is missing.';
+        return [];
+    }
+    $header = array_map(static function ($value) {
+        $value = trim((string)$value);
+        return strtolower(preg_replace('/^\xEF\xBB\xBF/', '', $value));
+    }, $header);
+    $rows = [];
+    while (($row = fgetcsv($handle)) !== false) {
+        if ($row === [null] || $row === false) {
+            continue;
+        }
+        $row = array_pad($row, count($header), '');
+        $rows[] = array_combine($header, $row);
+    }
+    fclose($handle);
+    return $rows;
+};
+
+$parseGroupMemberEmails = static function (string $value): array {
+    $emails = [];
+    foreach (preg_split('/[;|,\n\r]+/', $value) ?: [] as $email) {
+        $email = strtolower(trim($email));
+        if ($email !== '') {
+            $emails[$email] = $email;
+        }
+    }
+
+    return array_values($emails);
+};
+
+$findUserIdsByEmails = static function (PDO $pdo, array $emails): array {
+    $emails = array_values(array_unique(array_filter(array_map(static function ($email) {
+        return strtolower(trim((string)$email));
+    }, $emails), 'strlen')));
+    if (empty($emails)) {
+        return [];
+    }
+
+    $placeholders = implode(',', array_fill(0, count($emails), '?'));
+    $stmt = $pdo->prepare("SELECT id, email FROM users WHERE LOWER(email) IN ($placeholders)");
+    $stmt->execute($emails);
+
+    $ids = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+        $ids[] = (int)$row['id'];
+    }
+
+    return $ids;
+};
+
+if ($groupsAvailable && ($_GET['export'] ?? '') === 'groups') {
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="groups.csv"');
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['id', 'name', 'description', 'is_admin', 'is_staff', 'member_emails', 'created_at']);
+    $rows = $pdo->query('
+        SELECT ug.id,
+               ug.name,
+               ug.description,
+               ug.is_admin,
+               ug.is_staff,
+               ug.created_at,
+               COALESCE(member_exports.member_emails, \'\') AS member_emails
+          FROM user_groups ug
+          LEFT JOIN (
+                SELECT ugm.group_id,
+                       GROUP_CONCAT(u.email ORDER BY u.email SEPARATOR \';\') AS member_emails
+                  FROM user_group_members ugm
+                  JOIN users u ON u.id = ugm.user_id
+                 WHERE u.email <> \'\'
+                 GROUP BY ugm.group_id
+          ) member_exports ON member_exports.group_id = ug.id
+         ORDER BY ug.name ASC
+    ')->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    foreach ($rows as $row) {
+        fputcsv($out, [
+            (int)$row['id'],
+            $row['name'] ?? '',
+            $row['description'] ?? '',
+            !empty($row['is_admin']) ? 1 : 0,
+            (!empty($row['is_staff']) || !empty($row['is_admin'])) ? 1 : 0,
+            $row['member_emails'] ?? '',
+            $row['created_at'] ?? '',
+        ]);
+    }
+    fclose($out);
+    exit;
+}
+
+if (($_GET['template'] ?? '') === 'groups') {
+    $path = APP_ROOT . '/templates/csv/groups_template.csv';
+    if (is_file($path)) {
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="' . basename($path) . '"');
+        readfile($path);
+        exit;
+    }
+    http_response_code(404);
+    echo 'Template not found.';
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? 'save_group';
 
@@ -108,11 +229,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'Delete failed: ' . $e->getMessage();
             }
         }
+    } elseif ($action === 'import_groups') {
+        $rows = $readCsvUpload('groups_csv', $errors);
+        if ($rows && !$errors) {
+            $imported = 0;
+            $rowErrors = [];
+            foreach ($rows as $idx => $row) {
+                $name = trim($row['name'] ?? '');
+                $description = trim($row['description'] ?? '');
+                $isAdminFlag = !empty($row['is_admin']) && (int)$row['is_admin'] === 1;
+                $isStaffFlag = (!empty($row['is_staff']) && (int)$row['is_staff'] === 1) || $isAdminFlag;
+                $hasMemberEmailsColumn = array_key_exists('member_emails', $row);
+                $memberEmails = $hasMemberEmailsColumn
+                    ? $parseGroupMemberEmails((string)($row['member_emails'] ?? ''))
+                    : [];
+
+                if ($name === '') {
+                    $rowErrors[] = 'Row ' . ($idx + 2) . ': group name is required.';
+                    continue;
+                }
+
+                try {
+                    $stmt = $pdo->prepare('SELECT id FROM user_groups WHERE name = :name LIMIT 1');
+                    $stmt->execute([':name' => $name]);
+                    $groupId = (int)$stmt->fetchColumn();
+
+                    if ($groupId > 0) {
+                        $stmt = $pdo->prepare('
+                            UPDATE user_groups
+                               SET description = :description,
+                                   is_admin = :is_admin,
+                                   is_staff = :is_staff
+                             WHERE id = :id
+                        ');
+                        $stmt->execute([
+                            ':description' => $description !== '' ? $description : null,
+                            ':is_admin' => $isAdminFlag ? 1 : 0,
+                            ':is_staff' => $isStaffFlag ? 1 : 0,
+                            ':id' => $groupId,
+                        ]);
+                    } else {
+                        $stmt = $pdo->prepare('
+                            INSERT INTO user_groups (name, description, is_admin, is_staff, created_at)
+                            VALUES (:name, :description, :is_admin, :is_staff, NOW())
+                        ');
+                        $stmt->execute([
+                            ':name' => $name,
+                            ':description' => $description !== '' ? $description : null,
+                            ':is_admin' => $isAdminFlag ? 1 : 0,
+                            ':is_staff' => $isStaffFlag ? 1 : 0,
+                        ]);
+                        $groupId = (int)$pdo->lastInsertId();
+                    }
+
+                    if ($hasMemberEmailsColumn) {
+                        $userIds = $findUserIdsByEmails($pdo, $memberEmails);
+                        group_replace_group_members($pdo, $groupId, $userIds);
+                        $missingCount = count($memberEmails) - count($userIds);
+                        if ($missingCount > 0) {
+                            $rowErrors[] = 'Row ' . ($idx + 2) . ': ' . $missingCount . ' member email(s) were not found.';
+                        }
+                    }
+                    $imported++;
+                } catch (Throwable $e) {
+                    $rowErrors[] = 'Row ' . ($idx + 2) . ': ' . $e->getMessage();
+                }
+            }
+            if ($rowErrors) {
+                $errors[] = 'Group import completed with errors: ' . implode(' | ', array_slice($rowErrors, 0, 5));
+            }
+            if ($imported > 0) {
+                $messages[] = 'Groups imported: ' . $imported . '.';
+            }
+        }
     }
 }
 
 $groups = [];
 $users = [];
+$usersById = [];
 $groupMembers = [];
 
 try {
@@ -122,6 +317,9 @@ try {
          ORDER BY first_name ASC, last_name ASC, email ASC
     ');
     $users = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    foreach ($users as $user) {
+        $usersById[(int)$user['id']] = $user;
+    }
 } catch (Throwable $e) {
     $errors[] = 'Could not load users: ' . $e->getMessage();
 }
@@ -309,7 +507,36 @@ $renderUserPicker = static function (array $users, array $selectedUserIds, strin
                         <h5 class="card-title mb-0">All groups</h5>
                         <p class="text-muted small mb-0"><?= count($groups) ?> total.</p>
                     </div>
-                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createGroupModal" <?= !$groupsAvailable ? 'disabled' : '' ?>>Create Group</button>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <a class="btn btn-outline-secondary <?= !$groupsAvailable ? 'disabled' : '' ?>" href="groups.php?export=groups" <?= !$groupsAvailable ? 'aria-disabled="true"' : '' ?>>Export CSV</a>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#importGroupsModal" <?= !$groupsAvailable ? 'disabled' : '' ?>>Import CSV</button>
+                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createGroupModal" <?= !$groupsAvailable ? 'disabled' : '' ?>>Create Group</button>
+                    </div>
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-md-4">
+                        <input type="text" class="form-control" id="groups-filter" placeholder="Filter groups...">
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select" id="groups-sort">
+                            <option value="name:asc">Sort by name (A-Z)</option>
+                            <option value="name:desc">Sort by name (Z-A)</option>
+                            <option value="role:asc">Sort by role (A-Z)</option>
+                            <option value="role:desc">Sort by role (Z-A)</option>
+                            <option value="members:desc">Sort by members (most)</option>
+                            <option value="members:asc">Sort by members (fewest)</option>
+                            <option value="created:desc">Sort by created (newest)</option>
+                            <option value="created:asc">Sort by created (oldest)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select class="form-select" id="groups-role-filter">
+                            <option value="">All roles</option>
+                            <option value="admin">Admin</option>
+                            <option value="checkout">Checkout user</option>
+                            <option value="none">No role</option>
+                        </select>
+                    </div>
                 </div>
 
                 <?php if (empty($groups)): ?>
@@ -327,25 +554,45 @@ $renderUserPicker = static function (array $users, array $selectedUserIds, strin
                                     <th></th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="groups-table">
                                 <?php foreach ($groups as $group): ?>
                                     <?php
                                     $groupId = (int)$group['id'];
                                     $createdAtRaw = $group['created_at'] ?? '';
                                     $createdAt = $createdAtRaw ? layout_format_datetime($createdAtRaw) : '';
+                                    $createdAtSort = $createdAtRaw ? date('Y-m-d H:i:s', strtotime($createdAtRaw)) : '';
+                                    $roleLabel = !empty($group['is_admin']) ? 'Admin' : (!empty($group['is_staff']) ? 'Checkout user' : 'None');
+                                    $roleValue = !empty($group['is_admin']) ? 'admin' : (!empty($group['is_staff']) ? 'checkout' : 'none');
+                                    $memberEmails = [];
+                                    $memberNames = [];
+                                    foreach ($groupMembers[$groupId] ?? [] as $memberUserId) {
+                                        $memberUser = $usersById[(int)$memberUserId] ?? null;
+                                        if (!$memberUser) {
+                                            continue;
+                                        }
+                                        $memberEmail = trim((string)($memberUser['email'] ?? ''));
+                                        $memberName = trim((string)($memberUser['first_name'] ?? '') . ' ' . (string)($memberUser['last_name'] ?? ''));
+                                        if ($memberName === '') {
+                                            $memberName = $memberEmail;
+                                        }
+                                        if ($memberEmail !== '') {
+                                            $memberEmails[] = $memberEmail;
+                                        }
+                                        if ($memberName !== '') {
+                                            $memberNames[] = $memberName;
+                                        }
+                                    }
+                                    $memberSearchText = implode(' ', array_merge($memberNames, $memberEmails));
+                                    $searchText = trim((string)($group['name'] ?? '') . ' ' . (string)($group['description'] ?? '') . ' ' . $roleLabel . ' ' . $memberSearchText);
                                     ?>
-                                    <tr>
+                                    <tr data-name="<?= h($group['name'] ?? '') ?>"
+                                        data-role="<?= h($roleValue) ?>"
+                                        data-members="<?= (int)($group['member_count'] ?? 0) ?>"
+                                        data-created="<?= h($createdAtSort) ?>"
+                                        data-search="<?= h($searchText) ?>">
                                         <td><?= h($group['name'] ?? '') ?></td>
                                         <td><?= h($group['description'] ?? '') ?></td>
-                                        <td>
-                                            <?php if (!empty($group['is_admin'])): ?>
-                                                Admin
-                                            <?php elseif (!empty($group['is_staff'])): ?>
-                                                Checkout user
-                                            <?php else: ?>
-                                                <span class="text-muted">None</span>
-                                            <?php endif; ?>
-                                        </td>
+                                        <td><?= $roleValue !== 'none' ? h($roleLabel) : '<span class="text-muted">None</span>' ?></td>
                                         <td><?= (int)($group['member_count'] ?? 0) ?></td>
                                         <td><?= h($createdAt) ?></td>
                                         <td class="text-end">
@@ -367,6 +614,30 @@ $renderUserPicker = static function (array $users, array $selectedUserIds, strin
     </div>
 </div>
 <?php layout_footer(); ?>
+<div class="modal fade" id="importGroupsModal" tabindex="-1" aria-labelledby="importGroupsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" enctype="multipart/form-data">
+                <input type="hidden" name="action" value="import_groups">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="importGroupsModalLabel">Import groups CSV</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-3">Columns: name, description, is_admin, is_staff, member_emails. Separate multiple member emails with semicolons.</p>
+                    <div class="mb-3">
+                        <a class="btn btn-outline-secondary btn-sm" href="groups.php?template=groups">Download template CSV</a>
+                    </div>
+                    <input type="file" name="groups_csv" class="form-control" accept=".csv,text/csv" required>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Import groups</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 <div class="modal fade" id="createGroupModal" tabindex="-1" aria-labelledby="createGroupModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -463,6 +734,99 @@ $renderUserPicker = static function (array $users, array $selectedUserIds, strin
     </div>
 <?php endforeach; ?>
 <script>
+    function wireGroupsTable(config) {
+        var input = document.getElementById(config.filterId);
+        var table = document.getElementById(config.tableId);
+        var sortSelect = document.getElementById(config.sortId);
+        var filterSelects = (config.filterSelectIds || []).map(function (id) {
+            return document.getElementById(id);
+        }).filter(Boolean);
+        if (!input || !table) {
+            return;
+        }
+        var rows = Array.from(table.querySelectorAll('tr'));
+
+        function getSortParts() {
+            var value = sortSelect && sortSelect.value ? sortSelect.value : '';
+            var parts = value.split(':');
+            return {
+                key: parts[0] || '',
+                dir: parts[1] || 'asc',
+            };
+        }
+
+        function compareRows(a, b, key, dir) {
+            var av = a.dataset[key] || '';
+            var bv = b.dataset[key] || '';
+            if (key === 'members') {
+                av = parseInt(av, 10) || 0;
+                bv = parseInt(bv, 10) || 0;
+                if (av === bv) {
+                    return 0;
+                }
+                return dir === 'desc' ? bv - av : av - bv;
+            }
+
+            av = av.toLowerCase();
+            bv = bv.toLowerCase();
+            if (av === bv) {
+                return 0;
+            }
+            var result = av < bv ? -1 : 1;
+            return dir === 'desc' ? -result : result;
+        }
+
+        function matchesFilters(row) {
+            var query = input.value.trim().toLowerCase();
+            var searchText = (row.dataset.search || row.textContent || '').toLowerCase();
+            if (query && searchText.indexOf(query) === -1) {
+                return false;
+            }
+            return filterSelects.every(function (select) {
+                var value = select.value;
+                if (value === '') {
+                    return true;
+                }
+                return config.filterPredicates[select.id](row, value);
+            });
+        }
+
+        function render() {
+            var sort = getSortParts();
+            var ordered = rows.slice();
+            if (sort.key) {
+                ordered.sort(function (a, b) {
+                    return compareRows(a, b, sort.key, sort.dir);
+                });
+            }
+            ordered.forEach(function (row) {
+                row.style.display = matchesFilters(row) ? '' : 'none';
+                table.appendChild(row);
+            });
+        }
+
+        input.addEventListener('input', render);
+        if (sortSelect) {
+            sortSelect.addEventListener('change', render);
+        }
+        filterSelects.forEach(function (select) {
+            select.addEventListener('change', render);
+        });
+        render();
+    }
+
+    wireGroupsTable({
+        filterId: 'groups-filter',
+        sortId: 'groups-sort',
+        tableId: 'groups-table',
+        filterSelectIds: ['groups-role-filter'],
+        filterPredicates: {
+            'groups-role-filter': function (row, value) {
+                return (row.dataset.role || '') === value;
+            },
+        },
+    });
+
     function wireUserPicker(picker) {
         var users = [];
         var selectedIds = [];

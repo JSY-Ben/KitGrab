@@ -1,0 +1,2 @@
+name,description,is_admin,is_staff,member_emails
+Checkout Team,Users who can check equipment in and out,0,1,jane.doe@example.com;alex.smith@example.com
