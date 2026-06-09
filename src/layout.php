@@ -381,48 +381,18 @@ if (!function_exists('layout_primary_color')) {
     }
 }
 
-if (!function_exists('layout_theme_mode')) {
-    function layout_theme_mode(?array $cfg = null): string
-    {
-        $config = layout_cached_config($cfg);
-        $mode = strtolower(trim((string)($config['app']['theme_mode'] ?? 'system')));
-
-        return in_array($mode, ['light', 'dark', 'system'], true) ? $mode : 'system';
-    }
-}
-
 if (!function_exists('layout_theme_styles')) {
     function layout_theme_styles(?array $cfg = null): string
     {
         $primary      = layout_primary_color($cfg);
-        $themeMode    = layout_theme_mode($cfg);
         $primarySoft  = layout_adjust_lightness($primary, 0.3);   // subtle gradient partner
         $primaryStrong = layout_adjust_lightness($primary, -0.08); // slightly deeper for contrast
 
         [$r, $g, $b]          = layout_color_to_rgb($primary);
         [$rs, $gs, $bs]       = layout_color_to_rgb($primaryStrong);
         [$rl, $gl, $bl]       = layout_color_to_rgb($primarySoft);
-        $themeModeJson = json_encode($themeMode, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
 
-        $style = '<script>' . "\n"
-            . '(function () {' . "\n"
-            . '    var configured = ' . ($themeModeJson ?: '"system"') . ';' . "\n"
-            . '    var media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;' . "\n"
-            . '    var resolve = function () { return configured === "system" ? (media && media.matches ? "dark" : "light") : configured; };' . "\n"
-            . '    var apply = function () {' . "\n"
-            . '        var resolved = resolve();' . "\n"
-            . '        document.documentElement.setAttribute("data-kitgrab-theme", configured);' . "\n"
-            . '        document.documentElement.setAttribute("data-kitgrab-theme-resolved", resolved);' . "\n"
-            . '        document.documentElement.setAttribute("data-bs-theme", resolved);' . "\n"
-            . '    };' . "\n"
-            . '    apply();' . "\n"
-            . '    if (configured === "system" && media) {' . "\n"
-            . '        if (typeof media.addEventListener === "function") media.addEventListener("change", apply);' . "\n"
-            . '        else if (typeof media.addListener === "function") media.addListener(apply);' . "\n"
-            . '    }' . "\n"
-            . '})();' . "\n"
-            . '</script>' . "\n"
-            . '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">' . "\n"
+        $style = '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">' . "\n"
             . '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/plugins/confirmDate/confirmDate.css">' . "\n"
             . <<<CSS
 <style>
