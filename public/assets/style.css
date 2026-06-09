@@ -1977,3 +1977,192 @@ form .form-select {
     opacity: 1;
     transform: translate(-50%, 0) scale(1);
 }
+
+/* --------------------------------------------------
+   Dark theme
+-------------------------------------------------- */
+
+html[data-kitgrab-theme-resolved="dark"] {
+    color-scheme: dark;
+    --bg: #0f172a;
+    --panel: #182235;
+    --border: #334155;
+    --text: #e5edf7;
+    --muted: #a8b3c7;
+    --shadow-soft: 0 18px 50px rgba(0, 0, 0, 0.38);
+}
+
+html[data-kitgrab-theme-resolved="dark"] body {
+    background:
+        radial-gradient(circle at 15% 20%, rgba(var(--primary-rgb), 0.24), transparent 28%),
+        radial-gradient(circle at 80% 0%, rgba(var(--primary-soft-rgb), 0.12), transparent 26%),
+        radial-gradient(circle at 85% 60%, rgba(var(--primary-rgb), 0.14), transparent 24%),
+        linear-gradient(180deg, #07111f 0%, #0f172a 52%, #111827 100%);
+    color: var(--text);
+}
+
+html[data-kitgrab-theme-resolved="dark"] .page-shell {
+    background: linear-gradient(135deg, rgba(24, 34, 53, 0.96), rgba(15, 23, 42, 0.97));
+    border-color: var(--border);
+}
+
+html[data-kitgrab-theme-resolved="dark"] .page-shell::after {
+    background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.16), rgba(148, 163, 184, 0.05));
+    mix-blend-mode: normal;
+    opacity: 0.45;
+}
+
+html[data-kitgrab-theme-resolved="dark"] .top-bar,
+html[data-kitgrab-theme-resolved="dark"] .app-nav,
+html[data-kitgrab-theme-resolved="dark"] .filter-panel,
+html[data-kitgrab-theme-resolved="dark"] .search-section,
+html[data-kitgrab-theme-resolved="dark"] .availability-summary,
+html[data-kitgrab-theme-resolved="dark"] .permission-panel,
+html[data-kitgrab-theme-resolved="dark"] .reports-filter,
+html[data-kitgrab-theme-resolved="dark"] .settings-logo-preview__frame,
+html[data-kitgrab-theme-resolved="dark"] .catalogue-modal__dialog {
+    background: linear-gradient(120deg, rgba(30, 41, 59, 0.96), rgba(15, 23, 42, 0.95));
+    border-color: var(--border);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+}
+
+html[data-kitgrab-theme-resolved="dark"] .card,
+html[data-kitgrab-theme-resolved="dark"] .list-group-item,
+html[data-kitgrab-theme-resolved="dark"] .model-card,
+html[data-kitgrab-theme-resolved="dark"] .asset-card,
+html[data-kitgrab-theme-resolved="dark"] .stat-card,
+html[data-kitgrab-theme-resolved="dark"] .model-calendar-month,
+html[data-kitgrab-theme-resolved="dark"] .catalogue-item,
+html[data-kitgrab-theme-resolved="dark"] .reservation-card,
+html[data-kitgrab-theme-resolved="dark"] .border.rounded,
+html[data-kitgrab-theme-resolved="dark"] .booking-row,
+html[data-kitgrab-theme-resolved="dark"] .basket-summary {
+    background: var(--panel) !important;
+    border-color: var(--border) !important;
+    color: var(--text);
+}
+
+html[data-kitgrab-theme-resolved="dark"] .app-nav-link,
+html[data-kitgrab-theme-resolved="dark"] .app-nav-toggle,
+html[data-kitgrab-theme-resolved="dark"] .nav-tabs .nav-link,
+html[data-kitgrab-theme-resolved="dark"] .dropdown-menu,
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-calendar,
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-months .flatpickr-month,
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-weekdays,
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-time,
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-current-month .flatpickr-monthDropdown-months,
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-current-month input.cur-year {
+    background: #1e293b;
+    border-color: var(--border);
+    color: var(--text);
+}
+
+html[data-kitgrab-theme-resolved="dark"] .app-nav-link:hover,
+html[data-kitgrab-theme-resolved="dark"] .nav-tabs .nav-link:hover,
+html[data-kitgrab-theme-resolved="dark"] .nav-tabs .nav-link:focus {
+    background: rgba(var(--primary-rgb), 0.22);
+    color: #ffffff;
+}
+
+html[data-kitgrab-theme-resolved="dark"] .app-nav-link.active,
+html[data-kitgrab-theme-resolved="dark"] .nav-tabs .nav-link.active,
+html[data-kitgrab-theme-resolved="dark"] .btn-check:checked + .btn {
+    color: #ffffff;
+}
+
+html[data-kitgrab-theme-resolved="dark"] .text-muted,
+html[data-kitgrab-theme-resolved="dark"] .form-text,
+html[data-kitgrab-theme-resolved="dark"] .page-subtitle,
+html[data-kitgrab-theme-resolved="dark"] .top-bar-user,
+html[data-kitgrab-theme-resolved="dark"] .small.text-muted,
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-weekday {
+    color: var(--muted) !important;
+}
+
+html[data-kitgrab-theme-resolved="dark"] .table {
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--text);
+    --bs-table-border-color: var(--border);
+    --bs-table-striped-bg: rgba(148, 163, 184, 0.07);
+    --bs-table-striped-color: var(--text);
+    --bs-table-hover-bg: rgba(var(--primary-rgb), 0.14);
+    --bs-table-hover-color: var(--text);
+}
+
+html[data-kitgrab-theme-resolved="dark"] .table-light,
+html[data-kitgrab-theme-resolved="dark"] .table thead,
+html[data-kitgrab-theme-resolved="dark"] .model-bookings-table th {
+    --bs-table-bg: #111827;
+    --bs-table-color: var(--text);
+    --bs-table-border-color: var(--border);
+    background-color: #111827 !important;
+    color: var(--text) !important;
+}
+
+html[data-kitgrab-theme-resolved="dark"] .form-control,
+html[data-kitgrab-theme-resolved="dark"] .form-select,
+html[data-kitgrab-theme-resolved="dark"] .input-group-text {
+    background-color: #111827;
+    border-color: var(--border);
+    color: var(--text);
+}
+
+html[data-kitgrab-theme-resolved="dark"] .form-control:focus,
+html[data-kitgrab-theme-resolved="dark"] .form-select:focus {
+    background-color: #111827;
+    border-color: rgba(var(--primary-rgb), 0.72);
+    color: var(--text);
+    box-shadow: 0 0 0 0.2rem rgba(var(--primary-rgb), 0.28);
+}
+
+html[data-kitgrab-theme-resolved="dark"] .form-control::placeholder {
+    color: #7f8da3;
+}
+
+html[data-kitgrab-theme-resolved="dark"] .btn-outline-secondary,
+html[data-kitgrab-theme-resolved="dark"] .btn-outline-primary,
+html[data-kitgrab-theme-resolved="dark"] .btn-outline-danger {
+    color: var(--text);
+}
+
+html[data-kitgrab-theme-resolved="dark"] .alert-success {
+    background-color: rgba(16, 185, 129, 0.16);
+    border-color: rgba(16, 185, 129, 0.36);
+    color: #b7f7d7;
+}
+
+html[data-kitgrab-theme-resolved="dark"] .alert-warning {
+    background-color: rgba(245, 158, 11, 0.16);
+    border-color: rgba(245, 158, 11, 0.36);
+    color: #fde68a;
+}
+
+html[data-kitgrab-theme-resolved="dark"] .alert-danger {
+    background-color: rgba(239, 68, 68, 0.16);
+    border-color: rgba(239, 68, 68, 0.38);
+    color: #fecaca;
+}
+
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-day,
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-time input,
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-time .flatpickr-am-pm {
+    color: var(--text);
+}
+
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-day:hover,
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-day:focus,
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-time input:hover,
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-time .flatpickr-am-pm:hover {
+    background: rgba(var(--primary-rgb), 0.24);
+    border-color: rgba(var(--primary-rgb), 0.45);
+}
+
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-day.prevMonthDay,
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-day.nextMonthDay {
+    color: #64748b;
+}
+
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-calendar.arrowTop::before,
+html[data-kitgrab-theme-resolved="dark"] .flatpickr-calendar.arrowTop::after {
+    border-bottom-color: #1e293b;
+}

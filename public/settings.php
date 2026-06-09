@@ -392,6 +392,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $appNameRaw = trim($post('app_name', $app['name'] ?? 'KitGrab'));
     $app['name'] = $appNameRaw !== '' ? $appNameRaw : 'KitGrab';
     $app['primary_color']         = layout_normalize_hex_color($post('app_primary_color', $app['primary_color'] ?? '#660000'), '#660000');
+    $themeModeRaw = strtolower($post('app_theme_mode', $app['theme_mode'] ?? 'system'));
+    $app['theme_mode']            = in_array($themeModeRaw, ['light', 'dark', 'system'], true) ? $themeModeRaw : 'system';
     $dateFormatRaw = $post('app_date_format', $app['date_format'] ?? 'd/m/Y');
     $app['date_format']           = array_key_exists($dateFormatRaw, $dateFormatOptions) ? $dateFormatRaw : 'd/m/Y';
     $timeFormatRaw = $post('app_time_format', $app['time_format'] ?? 'H:i');
@@ -853,6 +855,7 @@ if (!in_array($selectedTimezone, $timezoneOptions, true)) {
     $selectedTimezone = 'Europe/Jersey';
 }
 $selectedPrimaryColor = layout_normalize_hex_color((string)$cfg(['app', 'primary_color'], '#660000'), '#660000');
+$selectedThemeMode = layout_theme_mode($config);
 $configuredLogoUrl = trim((string)$cfg(['app', 'logo_url'], ''));
 $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_default_logo_url();
 
@@ -2104,7 +2107,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
             <div class="col-12<?= $settingsTab === 'frontend' ? '' : ' d-none' ?>" data-settings-group="frontend">
                 <div class="card">
                     <div class="card-body">
-                        <h5 class="card-title mb-1">App Preferences</h5>
+                        <h5 class="card-title mb-1">App Settings</h5>
                         <p class="text-muted small mb-3">UI customisation and behaviour tweaks.</p>
                         <div class="row g-3">
                             <div class="col-md-4">
@@ -2157,6 +2160,38 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                            placeholder="#660000">
                                 </div>
                                 <div class="form-text">Use the picker or type a hex value like <code>#660000</code>.</div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Theme</label>
+                                <div class="btn-group w-100" role="group" aria-label="Theme mode">
+                                    <input type="radio"
+                                           class="btn-check"
+                                           name="app_theme_mode"
+                                           id="app_theme_dark"
+                                           value="dark"
+                                           autocomplete="off"
+                                        <?= $selectedThemeMode === 'dark' ? 'checked' : '' ?>>
+                                    <label class="btn btn-outline-primary" for="app_theme_dark">Dark</label>
+
+                                    <input type="radio"
+                                           class="btn-check"
+                                           name="app_theme_mode"
+                                           id="app_theme_light"
+                                           value="light"
+                                           autocomplete="off"
+                                        <?= $selectedThemeMode === 'light' ? 'checked' : '' ?>>
+                                    <label class="btn btn-outline-primary" for="app_theme_light">Light</label>
+
+                                    <input type="radio"
+                                           class="btn-check"
+                                           name="app_theme_mode"
+                                           id="app_theme_system"
+                                           value="system"
+                                           autocomplete="off"
+                                        <?= $selectedThemeMode === 'system' ? 'checked' : '' ?>>
+                                    <label class="btn btn-outline-primary" for="app_theme_system">System</label>
+                                </div>
+                                <div class="form-text">System follows the current computer appearance setting.</div>
                             </div>
                             <div class="col-md-8">
                                 <label class="form-label">Logo URL</label>

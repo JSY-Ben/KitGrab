@@ -98,6 +98,7 @@ return [
         'date_format' => 'd/m/Y', // display date format (PHP format string)
         'time_format' => 'H:i', // see settings for supported formats
         'primary_color' => '#660000', // main UI colour for gradients/buttons
+        'theme_mode' => 'system', // light, dark, or system
         'missed_cutoff_minutes' => 60, // minutes after start time before marking reservation as missed
         'overdue_staff_email' => '', // overdue report recipients (comma/newline separated)
         'overdue_staff_name'  => '', // optional names for recipients (comma/newline separated)
