@@ -390,6 +390,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $note !== '' ? "Note: {$note}" : '',
                         ];
                         $config = load_config();
+                        $templateVariables = [
+                            'person_name' => $userName,
+                            'person_email' => $userEmail,
+                            'equipment_list' => $assetLines,
+                            'start_date' => app_format_datetime($reservationStart),
+                            'return_date' => $dueDisplay,
+                            'my_reservations_link' => layout_my_reservations_url($config),
+                            'staff_reservations_link' => layout_staff_reservations_url($config),
+                            'staff_name' => $staffDisplayName,
+                            'staff_email' => $staffEmail,
+                            'note' => $note,
+                        ];
                         $appCfg = $config['app'] ?? [];
                         $notifyEnabled = array_key_exists('notification_quick_checkout_enabled', $appCfg)
                             ? !empty($appCfg['notification_quick_checkout_enabled'])
@@ -405,7 +417,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $defaultEmails = [];
 
                             if ($sendUserDefault && $userEmail !== '') {
-                                layout_send_notification($userEmail, $userName, 'Assets checked out', $bodyLines, $config);
+                                layout_send_notification($userEmail, $userName, 'Assets checked out', $bodyLines, $config, true, 'quick_checkout', $templateVariables);
                                 $defaultEmails[] = $userEmail;
                             }
 
@@ -416,7 +428,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     ],
                                     $bodyLines
                                 );
-                                layout_send_notification($staffEmail, $staffDisplayName, 'You checked out assets', $staffBody, $config);
+                                layout_send_notification($staffEmail, $staffDisplayName, 'You checked out assets', $staffBody, $config, true, 'quick_checkout', $templateVariables);
                                 $defaultEmails[] = $staffEmail;
                             }
 
@@ -430,7 +442,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $recipient['name'],
                                     'Assets checked out',
                                     $bodyLines,
-                                    $config
+                                    $config,
+                                    true,
+                                    'quick_checkout',
+                                    $templateVariables
                                 );
                             }
                         }

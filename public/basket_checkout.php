@@ -260,6 +260,20 @@ try {
             "Submitted by: {$submittedByDisplay}",
         ];
 
+        $templateVariables = [
+            'person_name' => $userName,
+            'person_email' => $userEmail,
+            'equipment_list' => $itemsSummary,
+            'start_date' => $startDisplay,
+            'return_date' => $endDisplay,
+            'reservation_id' => (string)$reservationId,
+            'reservation_link' => layout_reservation_detail_url($reservationId, $config),
+            'my_reservations_link' => layout_my_reservations_url($config),
+            'staff_reservations_link' => layout_staff_reservations_url($config),
+            'staff_name' => $submittedByName !== '' ? $submittedByName : $submittedByEmail,
+            'staff_email' => $submittedByEmail,
+        ];
+
         $notifiedEmails = [];
         if ($sendUserDefault && $userEmail !== '') {
             layout_send_notification(
@@ -267,7 +281,10 @@ try {
                 $userName !== '' ? $userName : $userEmail,
                 'Reservation submitted',
                 $userBody,
-                $config
+                $config,
+                true,
+                'reservation_submitted',
+                $templateVariables
             );
             $notifiedEmails[] = $userEmail;
         }
@@ -285,7 +302,10 @@ try {
                     $recipient['name'],
                     'New reservation submitted',
                     $adminBody,
-                    $config
+                    $config,
+                    true,
+                    'reservation_submitted',
+                    $templateVariables
                 );
                 $notifiedEmails[] = $recipient['email'];
             }
@@ -301,7 +321,10 @@ try {
                 $recipient['name'],
                 'New reservation submitted',
                 $adminBody,
-                $config
+                $config,
+                true,
+                'reservation_submitted',
+                $templateVariables
             );
         }
     }

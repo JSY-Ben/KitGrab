@@ -166,6 +166,17 @@ foreach ($missedReservations as $reservation) {
         "Missed cutoff: {$cutoffMinutes} minute(s) after the start time.",
     ];
     $adminBody = array_merge($bodyBase, ["Reserved for: {$userDisplay}"]);
+    $templateVariables = [
+        'person_name' => $userName,
+        'person_email' => $userEmail,
+        'equipment_list' => $itemsDisplay,
+        'start_date' => $startDisplay,
+        'return_date' => $endDisplay,
+        'reservation_id' => (string)$resId,
+        'reservation_link' => layout_reservation_detail_url($resId, $config),
+        'my_reservations_link' => layout_my_reservations_url($config),
+        'staff_reservations_link' => layout_staff_reservations_url($config),
+    ];
     $notifiedEmails = [];
     $notifiedEmailKeys = [];
 
@@ -175,7 +186,10 @@ foreach ($missedReservations as $reservation) {
             $userName !== '' ? $userName : $userEmail,
             'Reservation marked as missed',
             $bodyBase,
-            $config
+            $config,
+            true,
+            'mark_missed',
+            $templateVariables
         );
         if ($sent) {
             $emailSent++;
@@ -199,7 +213,10 @@ foreach ($missedReservations as $reservation) {
             (string)($recipient['name'] ?? $recipientEmail),
             'Reservation marked as missed',
             $adminBody,
-            $config
+            $config,
+            true,
+            'mark_missed',
+            $templateVariables
         );
         if ($sent) {
             $emailSent++;
@@ -223,7 +240,10 @@ foreach ($missedReservations as $reservation) {
             (string)($recipient['name'] ?? $recipientEmail),
             'Reservation marked as missed',
             $adminBody,
-            $config
+            $config,
+            true,
+            'mark_missed',
+            $templateVariables
         );
         if ($sent) {
             $emailSent++;

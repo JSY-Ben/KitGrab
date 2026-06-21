@@ -291,7 +291,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $staffDisplayName !== '' ? ["Checked in by: {$staffDisplayName}"] : [],
                                 $note !== '' ? ["Note: {$note}"] : []
                             );
-                            layout_send_notification($email, $info['name'], 'Assets checked in', $bodyLines, $config);
+                            $templateVariables = [
+                                'person_name' => $info['name'],
+                                'person_email' => $email,
+                                'equipment_list' => implode("\n", $info['assets']),
+                                'my_reservations_link' => layout_my_reservations_url($config),
+                                'staff_reservations_link' => layout_staff_reservations_url($config),
+                                'staff_name' => $staffDisplayName,
+                                'staff_email' => $staffEmail,
+                                'note' => $note,
+                            ];
+                            layout_send_notification($email, $info['name'], 'Assets checked in', $bodyLines, $config, true, 'quick_checkin', $templateVariables);
                             $notifiedEmails[] = $email;
                         }
                     }
@@ -314,7 +324,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     if ($sendStaffDefault && $staffEmail !== '' && !empty($assetTags)) {
-                        layout_send_notification($staffEmail, $staffDisplayName, 'Assets checked in', $staffBodyLines, $config);
+                        $staffTemplateVariables = [
+                            'person_name' => implode(', ', array_keys($summaryBuckets)),
+                            'equipment_list' => implode("\n", !empty($perUserSummary) ? $perUserSummary : $assetLineItems),
+                            'staff_reservations_link' => layout_staff_reservations_url($config),
+                            'staff_name' => $staffDisplayName,
+                            'staff_email' => $staffEmail,
+                            'note' => $note,
+                        ];
+                        layout_send_notification($staffEmail, $staffDisplayName, 'Assets checked in', $staffBodyLines, $config, true, 'quick_checkin', $staffTemplateVariables);
                         $notifiedEmails[] = $staffEmail;
                     }
 
@@ -341,7 +359,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $recipient['name'],
                             'Assets checked in',
                             $extraBodyLines,
-                            $config
+                            $config,
+                            true,
+                            'quick_checkin',
+                            [
+                                'person_name' => implode(', ', array_keys($summaryBuckets)),
+                                'equipment_list' => implode("\n", !empty($perUserSummary) ? $perUserSummary : $assetLineItems),
+                                'staff_reservations_link' => layout_staff_reservations_url($config),
+                                'staff_name' => $staffDisplayName,
+                                'staff_email' => $staffEmail,
+                                'note' => $note,
+                            ]
                         );
                     }
                 }

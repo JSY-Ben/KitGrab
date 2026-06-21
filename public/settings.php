@@ -287,6 +287,106 @@ function layout_upload_logo_file(array $file, array &$errors): ?string
     return 'uploads/logos/' . $filename;
 }
 
+function layout_notification_template_editor(string $templateKey, array $config): void
+{
+    $definitions = layout_notification_template_definitions();
+    if (!isset($definitions[$templateKey])) {
+        return;
+    }
+    $definition = $definitions[$templateKey];
+    $value = layout_sanitize_notification_template_html((string)($config['app'][$definition['config_key']] ?? $definition['default']));
+    $editorId = 'notification-template-' . str_replace('_', '-', $templateKey);
+    $editorContext = [
+        'overdue_user' => [
+            'title' => 'Overdue reminder sent to equipment holders',
+            'trigger' => 'The overdue-user cron task finds equipment that has not been returned.',
+            'audience' => 'Each person with overdue equipment receives their own email.',
+        ],
+        'overdue_staff' => [
+            'title' => 'Overdue summary sent to staff',
+            'trigger' => 'The overdue-staff cron task builds the consolidated overdue report.',
+            'audience' => 'The staff report recipients configured above.',
+        ],
+        'reservation_submitted' => [
+            'title' => 'New reservation submitted',
+            'trigger' => 'A user or member of staff submits a reservation.',
+            'audience' => 'The reservation user and any enabled staff, administrator, or additional recipients.',
+        ],
+        'quick_checkout' => [
+            'title' => 'Quick checkout completed',
+            'trigger' => 'Equipment is issued from the Quick Checkout page.',
+            'audience' => 'The equipment holder, checkout staff member, and additional recipients as enabled above.',
+        ],
+        'staff_checkout' => [
+            'title' => 'Reserved equipment checked out',
+            'trigger' => 'Staff check out an existing reservation.',
+            'audience' => 'The reservation user, checkout staff member, and additional recipients as enabled above.',
+        ],
+        'quick_checkin' => [
+            'title' => 'Equipment checked in',
+            'trigger' => 'Equipment is returned from the Quick Check-in page.',
+            'audience' => 'Affected users, check-in staff, and additional recipients as enabled above.',
+        ],
+        'mark_missed' => [
+            'title' => 'Reservation marked as missed',
+            'trigger' => 'The missed-reservation cron task marks an uncollected reservation as missed.',
+            'audience' => 'The reservation user and any enabled staff, administrator, or additional recipients.',
+        ],
+    ][$templateKey];
+    $wildcards = [
+        'Person name' => '{{person_name}}',
+        'Person email' => '{{person_email}}',
+        'Equipment' => '{{equipment_list}}',
+        'Start date' => '{{start_date}}',
+        'Return date' => '{{return_date}}',
+        'App name' => '{{app_name}}',
+        'Reservation #' => '{{reservation_id}}',
+        'Reservation link' => '{{reservation_link}}',
+        'My reservations' => '{{my_reservations_link}}',
+        'Staff reservations' => '{{staff_reservations_link}}',
+        'Staff name' => '{{staff_name}}',
+        'Staff email' => '{{staff_email}}',
+        'Note' => '{{note}}',
+        'Recipient name' => '{{recipient_name}}',
+    ];
+    ?>
+    <section class="notification-template-panel mt-3" data-template-editor aria-labelledby="<?= h($editorId) ?>-heading">
+        <div class="notification-template-heading">
+            <span class="badge notification-template-badge">Email content</span>
+            <div>
+                <h6 class="mb-1" id="<?= h($editorId) ?>-heading">Editing: <?= h($editorContext['title']) ?></h6>
+                <p class="small text-muted mb-0"><?= h($editorContext['trigger']) ?></p>
+                <p class="small mb-0"><strong>Recipients:</strong> <?= h($editorContext['audience']) ?></p>
+            </div>
+        </div>
+        <label class="form-label visually-hidden" for="<?= h($editorId) ?>"><?= h($definition['label']) ?></label>
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <span class="small fw-semibold text-muted">Format</span>
+            <div class="btn-toolbar gap-1" role="toolbar" aria-label="Email formatting">
+                <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" class="btn btn-outline-secondary" data-editor-command="bold" title="Bold" aria-label="Bold"><strong>B</strong></button>
+                    <button type="button" class="btn btn-outline-secondary" data-editor-command="italic" title="Italic" aria-label="Italic"><em>I</em></button>
+                    <button type="button" class="btn btn-outline-secondary" data-editor-command="underline" title="Underline" aria-label="Underline"><u>U</u></button>
+                    <button type="button" class="btn btn-outline-secondary" data-editor-command="insertUnorderedList">Bulleted list</button>
+                    <button type="button" class="btn btn-outline-secondary" data-editor-link>Link</button>
+                </div>
+            </div>
+        </div>
+        <div id="<?= h($editorId) ?>" class="form-control notification-template-editor" contenteditable="true" role="textbox" aria-multiline="true"><?= $value ?></div>
+        <textarea class="d-none" name="app_notify_template_<?= h($templateKey) ?>" data-template-value><?= h($value) ?></textarea>
+        <details class="notification-wildcards mt-2">
+            <summary>Insert a wildcard</summary>
+            <p class="small text-muted mt-2 mb-2">Place the cursor in the email, then select a value. Unavailable values are replaced with blank text.</p>
+            <div class="d-flex flex-wrap gap-1" aria-label="Template wildcards">
+                <?php foreach ($wildcards as $label => $token): ?>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-template-token="<?= h($token) ?>" title="Insert <?= h($token) ?>"><?= h($label) ?></button>
+                <?php endforeach; ?>
+            </div>
+        </details>
+    </section>
+    <?php
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? 'save';
 
@@ -444,6 +544,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'app_notify_mark_missed_extra_emails',
         $app['notification_mark_missed_extra_emails'] ?? ''
     );
+    foreach (layout_notification_template_definitions() as $templateKey => $templateDefinition) {
+        $postKey = 'app_notify_template_' . $templateKey;
+        $submittedTemplate = (string)($_POST[$postKey] ?? ($app[$templateDefinition['config_key']] ?? ''));
+        $app[$templateDefinition['config_key']] = layout_sanitize_notification_template_html($submittedTemplate);
+    }
 
     $existingPolicy = reservation_policy_get(['app' => $app]);
     $existingNoticeParts = reservation_policy_minutes_to_parts($existingPolicy['notice_minutes'] ?? 0);
@@ -1422,6 +1527,8 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                     <div class="form-text">Optional. Provide one name per email in the same order as the email list.</div>
                                 </div>
                             </div>
+                            <?php layout_notification_template_editor('overdue_user', $config); ?>
+                            <?php layout_notification_template_editor('overdue_staff', $config); ?>
                         </div>
 
                         <div class="border rounded p-3 mb-3">
@@ -1466,6 +1573,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                     <div class="form-text">Optional comma/newline list. These recipients are added on top of enabled defaults.</div>
                                 </div>
                             </div>
+                            <?php layout_notification_template_editor('reservation_submitted', $config); ?>
                         </div>
 
                         <div class="border rounded p-3 mb-3">
@@ -1492,6 +1600,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                     <div class="form-text">Optional comma/newline list. These recipients are added on top of the defaults.</div>
                                 </div>
                             </div>
+                            <?php layout_notification_template_editor('quick_checkout', $config); ?>
                         </div>
 
                         <div class="border rounded p-3 mb-3">
@@ -1518,6 +1627,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                     <div class="form-text">Optional comma/newline list. These recipients are added on top of the defaults.</div>
                                 </div>
                             </div>
+                            <?php layout_notification_template_editor('staff_checkout', $config); ?>
                         </div>
 
                         <div class="border rounded p-3 mb-3">
@@ -1544,6 +1654,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                     <div class="form-text">Optional comma/newline list. These recipients are added on top of the defaults.</div>
                                 </div>
                             </div>
+                            <?php layout_notification_template_editor('quick_checkin', $config); ?>
                         </div>
 
                         <div class="border rounded p-3">
@@ -1579,6 +1690,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                     <div class="form-text">Optional comma/newline list. Emails are sent per missed reservation.</div>
                                 </div>
                             </div>
+                            <?php layout_notification_template_editor('mark_missed', $config); ?>
                         </div>
                     </div>
                 </div>
@@ -2213,6 +2325,77 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
     const settingsTabs = Array.from(document.querySelectorAll('#settings-group-tabs [data-settings-tab]'));
     const settingsSections = Array.from(form.querySelectorAll('[data-settings-group]'));
     const settingsTabAllowed = new Set(['frontend', 'backend', 'permissions', 'notifications']);
+
+    form.querySelectorAll('[data-template-editor]').forEach((wrapper) => {
+        const editor = wrapper.querySelector('[contenteditable="true"]');
+        const valueField = wrapper.querySelector('[data-template-value]');
+        if (!editor || !valueField) return;
+
+        let savedRange = null;
+        const saveSelection = () => {
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0) return;
+            const range = selection.getRangeAt(0);
+            if (editor.contains(range.commonAncestorContainer)) {
+                savedRange = range.cloneRange();
+            }
+        };
+        const restoreSelection = () => {
+            editor.focus();
+            if (!savedRange) return;
+            const selection = window.getSelection();
+            if (!selection) return;
+            selection.removeAllRanges();
+            selection.addRange(savedRange);
+        };
+        const syncTemplate = () => { valueField.value = editor.innerHTML; };
+        editor.addEventListener('input', () => {
+            syncTemplate();
+            saveSelection();
+        });
+        editor.addEventListener('blur', syncTemplate);
+        editor.addEventListener('keyup', saveSelection);
+        editor.addEventListener('mouseup', saveSelection);
+
+        wrapper.querySelectorAll('[data-editor-command]').forEach((button) => {
+            button.addEventListener('mousedown', (event) => event.preventDefault());
+            button.addEventListener('click', () => {
+                restoreSelection();
+                document.execCommand(button.dataset.editorCommand || '', false, null);
+                syncTemplate();
+                saveSelection();
+            });
+        });
+        const linkButton = wrapper.querySelector('[data-editor-link]');
+        if (linkButton) {
+            linkButton.addEventListener('mousedown', (event) => event.preventDefault());
+            linkButton.addEventListener('click', () => {
+                const url = window.prompt('Enter an https:// or mailto: link');
+                if (!url || !/^(https?:\/\/|mailto:)/i.test(url.trim())) return;
+                restoreSelection();
+                document.execCommand('createLink', false, url.trim());
+                syncTemplate();
+                saveSelection();
+            });
+        }
+        wrapper.querySelectorAll('[data-template-token]').forEach((button) => {
+            button.addEventListener('mousedown', (event) => event.preventDefault());
+            button.addEventListener('click', () => {
+                restoreSelection();
+                document.execCommand('insertText', false, button.dataset.templateToken || '');
+                syncTemplate();
+                saveSelection();
+            });
+        });
+    });
+
+    form.addEventListener('submit', () => {
+        form.querySelectorAll('[data-template-editor]').forEach((wrapper) => {
+            const editor = wrapper.querySelector('[contenteditable="true"]');
+            const valueField = wrapper.querySelector('[data-template-value]');
+            if (editor && valueField) valueField.value = editor.innerHTML;
+        });
+    });
 
     const applySettingsTab = (tabName) => {
         const nextTab = settingsTabAllowed.has(tabName) ? tabName : 'frontend';
