@@ -11,7 +11,7 @@ require_once SRC_PATH . '/email.php';
 require_once SRC_PATH . '/layout.php';
 require_once SRC_PATH . '/reservation_policy.php';
 
-$defaultEnd   = (new DateTime('tomorrow 9:00'))->format('Y-m-d\TH:i');
+$defaultEnd = (new DateTimeImmutable('tomorrow 9:00'))->format('Y-m-d\TH:i');
 
 $endRaw   = $_POST['end_datetime'] ?? $defaultEnd;
 
@@ -169,8 +169,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $overrideValue   = $overrideAllowed;
         $endRaw          = trim($_POST['end_datetime'] ?? $endRaw);
 
-        $startTs = time();
-        $endTs   = strtotime($endRaw);
+        // Bootstrap sets PHP's default to the configured application timezone.
+        $startDateTime = new DateTimeImmutable('now');
+        $endDateTime = app_parse_datetime_value($endRaw);
+        $startTs = $startDateTime->getTimestamp();
+        $endTs = $endDateTime ? $endDateTime->getTimestamp() : false;
 
         if ($checkoutTo === '') {
             $errors[] = 'Please enter the local inventory user (email or name) to check out to.';
@@ -233,8 +236,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (empty($policyViolations)) {
                         // Check for overlapping reservations in the checkout period, and only warn when
                         // reserved qty would exceed available stock after this checkout.
-                        $windowStartIso = date('Y-m-d H:i:s', $startTs);
-                        $windowEndIso = date('Y-m-d H:i:s', $endTs);
+                        $windowStartIso = $startDateTime->format('Y-m-d H:i:s');
+                        $windowEndIso = $endDateTime->format('Y-m-d H:i:s');
                         $reservationConflicts = [];
                         $checkoutModelCounts = [];
                         foreach ($checkoutAssets as $asset) {
@@ -279,7 +282,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if (!empty($reservationConflicts) && !$overrideAllowed) {
                             $errors[] = 'Some assets are reserved during this checkout period. Review who reserved them below or tick "Override" to proceed anyway.';
                         } else {
-                            $expectedCheckinIso = date('Y-m-d H:i:s', $endTs);
+                            $expectedCheckinIso = $endDateTime->format('Y-m-d H:i:s');
 
                             foreach ($checkoutAssets as $asset) {
                                 $assetId  = (int)$asset['id'];
@@ -295,8 +298,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     if (empty($errors)) {
-                        $reservationStart = date('Y-m-d H:i:s', $startTs);
-                        $reservationEnd   = date('Y-m-d H:i:s', $endTs);
+                        $reservationStart = $startDateTime->format('Y-m-d H:i:s');
+                        $reservationEnd   = $endDateTime->format('Y-m-d H:i:s');
                         $assetTags = array_map(function ($a) {
                             $tag   = $a['asset_tag'] ?? '';
                             $model = $a['model'] ?? '';
