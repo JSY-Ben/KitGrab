@@ -78,6 +78,11 @@ input[type="checkbox"] {
     overflow: visible;
 }
 
+.auth-shell {
+    max-width: 480px;
+    margin: 0 auto;
+}
+
 .page-shell::after {
     content: "";
     position: absolute;

@@ -73,7 +73,10 @@ if (!empty($_SESSION['user']['email'])) {
             </div>
 
             <div class="mb-3">
-                <label for="local_password" class="form-label">Password</label>
+                <div class="d-flex align-items-center justify-content-between gap-2">
+                    <label for="local_password" class="form-label">Password</label>
+                    <a href="forgot_password.php" class="small mb-2">Forgot password?</a>
+                </div>
                 <input type="password"
                        class="form-control"
                        id="local_password"
