@@ -53,23 +53,31 @@ $metadataLabels = [
     'booked_for' => 'Booked for',
     'asset_id' => 'Asset ID',
     'asset_name' => 'Asset name',
+    'label' => 'Asset',
     'items' => 'Items',
 ];
 
-function format_activity_metadata(?string $metadataJson, array $labelMap, ?DateTimeZone $tz = null): array
+function format_activity_metadata_value(array $metadata, array $labelMap, ?DateTimeZone $tz = null): array
 {
-    if (!$metadataJson) {
-        return [];
-    }
-
-    $decoded = json_decode($metadataJson, true);
-    if (!is_array($decoded)) {
-        return [];
-    }
-
     $lines = [];
-    foreach ($decoded as $key => $value) {
+
+    // A labelled asset is clearer than showing its internal database ID as well.
+    if (isset($metadata['label']) && trim((string)$metadata['label']) !== '') {
+        unset($metadata['asset_id']);
+    }
+
+    foreach ($metadata as $key => $value) {
         $label = $labelMap[$key] ?? ucwords(str_replace('_', ' ', (string)$key));
+
+        // Some older audit entries contain a JSON object inside a string field.
+        if (is_string($value) && ($value[0] ?? '') === '{') {
+            $nested = json_decode($value, true);
+            if (is_array($nested)) {
+                array_push($lines, ...format_activity_metadata_value($nested, $labelMap, $tz));
+                continue;
+            }
+        }
+
         if (is_array($value)) {
             $value = implode(', ', array_map(static function ($item): string {
                 return is_scalar($item) ? (string)$item : json_encode($item, JSON_UNESCAPED_SLASHES);
@@ -89,13 +97,26 @@ function format_activity_metadata(?string $metadataJson, array $labelMap, ?DateT
             }
         }
 
-        if ($value === '') {
-            continue;
+        if ($value !== '') {
+            $lines[] = $label . ': ' . $value;
         }
-        $lines[] = $label . ': ' . $value;
     }
 
     return $lines;
+}
+
+function format_activity_metadata(?string $metadataJson, array $labelMap, ?DateTimeZone $tz = null): array
+{
+    if (!$metadataJson) {
+        return [];
+    }
+
+    $decoded = json_decode($metadataJson, true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+
+    return format_activity_metadata_value($decoded, $labelMap, $tz);
 }
 
 $qRaw    = trim($_GET['q'] ?? '');
