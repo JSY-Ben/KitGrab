@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.2.1 - Password recovery
+
+- Added a forgotten-password flow for local accounts.
+- Added secure, expiring, single-use password reset links delivered through the configured SMTP service.
+- Added request throttling and neutral responses to prevent account discovery.
+
+Run the browser upgrade after installing this release to add secure password reset token storage.
+
 ## v1.2.0 - Reservation workflow and usability update
 
 - Added the ability for users to add a note to the checkout user when submitting their reservation

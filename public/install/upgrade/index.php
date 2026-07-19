@@ -205,7 +205,7 @@ function upgrade_stream_database_backup(PDO $pdo, string $databaseName, string $
     echo "COMMIT;\n";
 }
 
-$targetVersion = '1.2.0';
+$targetVersion = '1.2.1';
 $configExists = is_file($configPath) || is_file($legacyConfigPath);
 $messages = [];
 $errors = [];
@@ -406,6 +406,36 @@ $migrations = [
             if (!$columnExists('checkout_note')) {
                 $pdo->exec('ALTER TABLE reservations ADD COLUMN checkout_note TEXT NULL AFTER reservation_note');
             }
+        },
+    ],
+    [
+        'version' => '1.2.1',
+        'label' => 'Add secure password reset support',
+        'is_applied' => static function (PDO $pdo, array $appliedVersions): bool {
+            try {
+                $pdo->query('SELECT token_hash, expires_at, used_at FROM password_reset_tokens LIMIT 1');
+                return isset($appliedVersions['1.2.1']);
+            } catch (Throwable $e) {
+                return false;
+            }
+        },
+        'run' => static function (PDO $pdo): void {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    user_id INT UNSIGNED NOT NULL,
+                    token_hash CHAR(64) NOT NULL,
+                    expires_at DATETIME NOT NULL,
+                    used_at DATETIME DEFAULT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    UNIQUE KEY uq_password_reset_token_hash (token_hash),
+                    KEY idx_password_reset_user (user_id),
+                    KEY idx_password_reset_expires (expires_at),
+                    CONSTRAINT fk_password_reset_user
+                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
         },
     ],
 ];

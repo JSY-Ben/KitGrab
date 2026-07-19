@@ -134,6 +134,21 @@ if (!function_exists('layout_known_database_upgrades')) {
                     }
                 },
             ],
+            [
+                'version' => '1.2.1',
+                'description' => 'Add secure password reset support.',
+                'is_applied' => static function (PDO $pdo): bool {
+                    try {
+                        $stmt = $pdo->prepare('SELECT 1 FROM schema_version WHERE version = :version LIMIT 1');
+                        $stmt->execute([':version' => '1.2.1']);
+                        $versionApplied = (bool)$stmt->fetchColumn();
+                        $pdo->query('SELECT token_hash, expires_at, used_at FROM password_reset_tokens LIMIT 1');
+                        return $versionApplied;
+                    } catch (Throwable $e) {
+                        return false;
+                    }
+                },
+            ],
         ];
     }
 }
