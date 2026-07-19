@@ -1086,7 +1086,10 @@ $active  = basename($_SERVER['PHP_SELF']);
 
                 <?php if ($selectedReservation): ?>
                     <div class="mt-3 alert alert-info mb-0">
-                        <div><strong>Selected:</strong> #<?= (int)$selectedReservation['id'] ?> – <?= h($selectedReservation['user_name'] ?? '') ?></div>
+                        <div class="d-flex align-items-center gap-2">
+                            <strong>Selected:</strong> #<?= (int)$selectedReservation['id'] ?> –
+                            <?= layout_user_identity_by_email((string)($selectedReservation['user_name'] ?? ''), (string)($selectedReservation['user_email'] ?? ''), false) ?>
+                        </div>
                         <div>When: <?= h(display_datetime($selectedReservation['start_datetime'] ?? '')) ?> → <?= h(display_datetime($selectedReservation['end_datetime'] ?? '')) ?></div>
                         <?php if (!empty($selectedItems)): ?>
                             <div>Models &amp; quantities: <?= h(build_items_summary_text($selectedItems)) ?></div>
@@ -1123,7 +1126,7 @@ $active  = basename($_SERVER['PHP_SELF']);
                                         <?php foreach (($conflict['overlaps'] ?? []) as $overlap): ?>
                                             <br>
                                             Reservation #<?= (int)($overlap['id'] ?? 0) ?>:
-                                            <?= h((string)($overlap['user_name'] ?? 'Unknown user')) ?>
+                                            <?= layout_user_identity_by_email((string)($overlap['user_name'] ?? 'Unknown user'), (string)($overlap['user_email'] ?? ''), false) ?>
                                             (<?= h((string)($overlap['user_email'] ?? '')) ?>),
                                             <?= h(display_datetime($overlap['start_datetime'] ?? '')) ?>
                                             -> <?= h(display_datetime($overlap['end_datetime'] ?? '')) ?>,

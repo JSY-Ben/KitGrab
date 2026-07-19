@@ -334,7 +334,8 @@ if (!function_exists('layout_user_avatar')) {
         if (empty($config['auth']['user_photos_enabled'])) return '';
         $photo = trim((string)($user['profile_photo_url'] ?? ''));
         if ($photo !== '') {
-            return '<img class="user-avatar" src="' . layout_html_escape($photo) . '" alt="">';
+            $photoEsc = layout_html_escape($photo);
+            return '<button type="button" class="user-avatar-button" data-profile-photo="' . $photoEsc . '" data-profile-photo-name="' . layout_html_escape($name) . '" aria-label="View full profile photo for ' . layout_html_escape($name) . '"><img class="user-avatar" src="' . $photoEsc . '" alt=""></button>';
         }
         $parts = preg_split('/\s+/', $name) ?: [];
         $initials = '';
@@ -662,10 +663,37 @@ if (!function_exists('layout_footer')) {
         $timeLabelJson = json_encode('Time', JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?: '"Time"';
 
         echo '<div id="app-busy-overlay" class="app-busy-overlay" aria-hidden="true"><div class="app-busy-card"><div class="spinner-border" aria-hidden="true"></div><strong>Please wait…</strong></div></div>';
+        echo '<dialog id="profile-photo-dialog" class="profile-photo-dialog"><div class="profile-photo-dialog__header"><strong id="profile-photo-dialog-title">Profile photo</strong><button type="button" class="btn-close" data-profile-photo-close aria-label="Close"></button></div><div class="profile-photo-dialog__body"><img id="profile-photo-dialog-image" src="" alt=""></div></dialog>';
         echo '<script src="assets/nav.js"></script>';
         echo '<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>';
         echo '<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/plugins/confirmDate/confirmDate.js"></script>';
         echo '<script>window.KitGrabFlatpickr=' . ($flatpickrCfgJson ?: '{}') . ';</script>';
+        echo <<<'SCRIPT'
+<script>
+(function () {
+    const dialog = document.getElementById('profile-photo-dialog');
+    const image = document.getElementById('profile-photo-dialog-image');
+    const title = document.getElementById('profile-photo-dialog-title');
+    if (!dialog || !image || !title) return;
+    document.addEventListener('click', function (event) {
+        const trigger = event.target.closest('[data-profile-photo]');
+        if (!trigger) return;
+        image.src = trigger.getAttribute('data-profile-photo') || '';
+        const name = trigger.getAttribute('data-profile-photo-name') || 'User';
+        image.alt = 'Profile photo for ' + name;
+        title.textContent = name;
+        if (typeof dialog.showModal === 'function') dialog.showModal();
+    });
+    dialog.querySelectorAll('[data-profile-photo-close]').forEach(function (button) {
+        button.addEventListener('click', function () { dialog.close(); });
+    });
+    dialog.addEventListener('click', function (event) {
+        if (event.target === dialog) dialog.close();
+    });
+    dialog.addEventListener('close', function () { image.src = ''; });
+})();
+</script>
+SCRIPT;
         echo <<<SCRIPT
 <script>
 (function () {

@@ -431,6 +431,14 @@ input[type="checkbox"] {
 .user-identity__email { color:var(--muted); font-size:.76rem; font-weight:400; }
 .user-avatar { width:34px; height:34px; flex:0 0 34px; border:2px solid rgba(var(--primary-rgb),.22); border-radius:50%; background:#fff; object-fit:cover; box-shadow:0 3px 10px rgba(15,23,42,.12); }
 .user-avatar--initials { display:inline-flex; align-items:center; justify-content:center; background:linear-gradient(135deg,var(--primary),var(--primary-strong)); color:#fff; font-size:.68rem; font-weight:800; letter-spacing:.03em; }
+.user-avatar-button { display:inline-flex; flex:0 0 auto; padding:0; border:0; border-radius:50%; background:transparent; cursor:zoom-in; }
+.user-avatar-button:hover .user-avatar,.user-avatar-button:focus-visible .user-avatar { border-color:var(--primary); box-shadow:0 0 0 3px rgba(var(--primary-rgb),.18),0 4px 12px rgba(15,23,42,.16); }
+.user-avatar-button:focus-visible { outline:0; }
+.profile-photo-dialog { width:min(92vw,760px); max-width:760px; padding:0; border:1px solid var(--border); border-radius:1rem; background:#fff; box-shadow:0 24px 80px rgba(15,23,42,.35); }
+.profile-photo-dialog::backdrop { background:rgba(15,23,42,.68); backdrop-filter:blur(4px); }
+.profile-photo-dialog__header { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem 1.15rem; border-bottom:1px solid var(--border); }
+.profile-photo-dialog__body { display:flex; align-items:center; justify-content:center; min-height:240px; max-height:78vh; padding:1rem; background:#f8fafc; }
+.profile-photo-dialog__body img { display:block; max-width:100%; max-height:calc(78vh - 2rem); border-radius:.65rem; object-fit:contain; }
 
 .top-bar-actions {
     display: flex;

@@ -600,7 +600,9 @@ function layout_checked_out_url(string $base, array $params): string
                                     $model = $a['model']['name'] ?? '';
                                     $modelImage = $a['model']['image'] ?? '';
                                     $user  = $a['assigned_to'] ?? ($a['assigned_to_fullname'] ?? '');
+                                    $userEmail = '';
                                     if (is_array($user)) {
+                                        $userEmail = (string)($user['email'] ?? ($user['username'] ?? ''));
                                         $user = $user['name'] ?? ($user['username'] ?? '');
                                     }
                                     $checkedOut = $a['_last_checkout_norm'] ?? ($a['last_checkout'] ?? '');
@@ -624,7 +626,7 @@ function layout_checked_out_url(string $base, array $params): string
                                     <td><?= h($atag) ?></td>
                                     <td><div class="d-flex align-items-center gap-2"><?php if ($modelImage !== ''): ?><img src="<?= h($modelImage) ?>" alt="<?= h($name . ' thumbnail') ?>" class="checked-out-item-thumb" loading="lazy"><?php else: ?><div class="checked-out-item-thumb checked-out-item-thumb--placeholder">No image</div><?php endif; ?><div class="fw-semibold"><?= h($name) ?></div></div></td>
                                     <td><?= h($model) ?></td>
-                                    <td><?= h($user) ?></td>
+                                    <td><?= layout_user_identity_by_email((string)$user, $userEmail, false) ?></td>
                                     <td><?= h(format_display_datetime($checkedOut)) ?></td>
                                     <td class="<?= $isOverdue ? 'text-danger fw-semibold' : '' ?>">
                                         <?= h(format_display_datetime($expected)) ?>
