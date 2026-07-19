@@ -132,6 +132,10 @@ return [
         'notification_mark_missed_send_admins' => false, // include administrators for missed notifications
         'notification_mark_missed_extra_emails' => '', // extra recipients for missed reservation emails
         'notification_mark_missed_template_html' => '<p>Reservation <strong>#{{reservation_id}}</strong> for {{person_name}} has been marked as missed.</p><p><strong>Equipment:</strong> {{equipment_list}}<br><strong>Scheduled start:</strong> {{start_date}}<br><strong>Scheduled return:</strong> {{return_date}}</p><p>{{reservation_link}}</p>',
+        'notification_new_user_enabled' => true,
+        'notification_new_user_send_admins' => true,
+        'notification_new_user_extra_emails' => '',
+        'notification_new_user_template_html' => '<p>A new user account has been created.</p><p><strong>Name:</strong> {{person_name}}<br><strong>Email:</strong> {{person_email}}<br><strong>Username:</strong> {{username}}<br><strong>Approval status:</strong> {{approval_status}}</p>',
         'block_catalogue_overdue' => true, // block catalogue for users with overdue checkouts
         'catalogue_cache_ttl' => 0, // in seconds; set 0 to disable
         // Reservation controls

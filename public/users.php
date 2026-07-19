@@ -4,6 +4,7 @@ require_once SRC_PATH . '/auth.php';
 require_once SRC_PATH . '/layout.php';
 require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/group_helpers.php';
+require_once SRC_PATH . '/email.php';
 
 $active  = basename($_SERVER['PHP_SELF']);
 $isAdmin = !empty($currentUser['is_admin']);
@@ -217,6 +218,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($groupsAvailable) {
                         group_replace_user_memberships($pdo, (int)$pdo->lastInsertId(), $selectedGroupIds);
                     }
+                    layout_notify_new_user_created([
+                        'first_name' => $firstNameValue,
+                        'last_name' => $lastNameValue,
+                        'email' => $email,
+                        'username' => $usernameValue ?? '',
+                        'is_approved' => 1,
+                    ]);
                     $messages[] = 'User created.';
                 }
             } catch (Throwable $e) {
@@ -229,9 +237,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = 'Invalid user to approve.';
         } else {
             try {
+                $userStmt = $pdo->prepare('SELECT first_name, last_name, email FROM users WHERE id = :id LIMIT 1');
+                $userStmt->execute([':id' => $approveId]);
+                $approvedUser = $userStmt->fetch(PDO::FETCH_ASSOC) ?: null;
                 $stmt = $pdo->prepare('UPDATE users SET is_approved = 1 WHERE id = :id');
                 $stmt->execute([':id' => $approveId]);
-                $messages[] = $stmt->rowCount() > 0 ? 'User approved.' : 'User was already approved.';
+                if ($stmt->rowCount() > 0 && $approvedUser) {
+                    $approvedName = trim((string)$approvedUser['first_name'] . ' ' . (string)$approvedUser['last_name']);
+                    $approvedName = $approvedName !== '' ? $approvedName : (string)$approvedUser['email'];
+                    $loginUrl = layout_app_page_url('login.php');
+                    $lines = [
+                        'Hello ' . $approvedName . ',',
+                        'Your account has been approved. You can now sign in.',
+                        $loginUrl !== '' ? 'Sign in: ' . $loginUrl : null,
+                    ];
+                    $sent = layout_send_notification((string)$approvedUser['email'], $approvedName, 'Your account has been approved', $lines);
+                    $messages[] = $sent ? 'User approved and notified by email.' : 'User approved, but the notification email could not be sent.';
+                } else {
+                    $messages[] = 'User was already approved.';
+                }
             } catch (Throwable $e) {
                 $errors[] = 'Approval failed: ' . $e->getMessage();
             }

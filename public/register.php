@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/layout.php';
+require_once SRC_PATH . '/email.php';
 
 session_start();
 $config = load_config();
@@ -72,6 +73,13 @@ if ($registrationEnabled && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':password_hash' => password_hash($password, PASSWORD_DEFAULT),
                 ':is_approved' => $requiresApproval ? 0 : 1,
             ]);
+            layout_notify_new_user_created([
+                'first_name' => $firstName,
+                'last_name' => $lastName,
+                'email' => $email,
+                'username' => $username,
+                'is_approved' => $requiresApproval ? 0 : 1,
+            ], $config);
             $registered = true;
             unset($_SESSION['registration_csrf']);
         } catch (Throwable $e) {

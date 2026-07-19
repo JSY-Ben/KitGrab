@@ -5,6 +5,7 @@
 - Added optional public registration for local user accounts.
 - Added configurable administrator approval for newly registered accounts.
 - Added pending-account visibility and approval controls to the Users page.
+- Added approval emails and configurable administrator notifications when user accounts are created.
 
 Run the browser upgrade after installing this release to add account approval status storage.
 

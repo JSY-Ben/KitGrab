@@ -332,10 +332,17 @@ function layout_notification_template_editor(string $templateKey, array $config)
             'trigger' => 'The missed-reservation cron task marks an uncollected reservation as missed.',
             'audience' => 'The reservation user and any enabled staff, administrator, or additional recipients.',
         ],
+        'new_user_registered' => [
+            'title' => 'New user account created',
+            'trigger' => 'A local account is created through public registration or by an administrator.',
+            'audience' => 'Enabled administrator and additional recipients.',
+        ],
     ][$templateKey];
     $wildcards = [
         'Person name' => '{{person_name}}',
         'Person email' => '{{person_email}}',
+        'Username' => '{{username}}',
+        'Approval status' => '{{approval_status}}',
         'Equipment' => '{{equipment_list}}',
         'Start date' => '{{start_date}}',
         'Return date' => '{{return_date}}',
@@ -546,6 +553,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $app['notification_mark_missed_extra_emails'] = $post(
         'app_notify_mark_missed_extra_emails',
         $app['notification_mark_missed_extra_emails'] ?? ''
+    );
+    $app['notification_new_user_enabled'] = isset($_POST['app_notify_new_user_enabled']);
+    $app['notification_new_user_send_admins'] = isset($_POST['app_notify_new_user_send_admins']);
+    $app['notification_new_user_extra_emails'] = $post(
+        'app_notify_new_user_extra_emails',
+        $app['notification_new_user_extra_emails'] ?? ''
     );
     foreach (layout_notification_template_definitions() as $templateKey => $templateDefinition) {
         $postKey = 'app_notify_template_' . $templateKey;
@@ -1577,6 +1590,30 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                             </div>
                             <?php layout_notification_template_editor('overdue_user', $config); ?>
                             <?php layout_notification_template_editor('overdue_staff', $config); ?>
+                        </div>
+
+                        <div class="border rounded p-3 mb-3">
+                            <h6 class="mb-2">New user created notifications</h6>
+                            <p class="text-muted small mb-3">Sent when a local account is created through registration or by an administrator.</p>
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <div class="form-check mt-1">
+                                        <input class="form-check-input" type="checkbox" name="app_notify_new_user_enabled" id="app_notify_new_user_enabled" <?= $cfg(['app', 'notification_new_user_enabled'], true) ? 'checked' : '' ?>>
+                                        <label class="form-check-label fw-semibold" for="app_notify_new_user_enabled">Enable new user emails</label>
+                                    </div>
+                                    <div class="form-check mt-2">
+                                        <input class="form-check-input" type="checkbox" name="app_notify_new_user_send_admins" id="app_notify_new_user_send_admins" <?= $cfg(['app', 'notification_new_user_send_admins'], true) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="app_notify_new_user_send_admins">Email all Administrators</label>
+                                    </div>
+                                    <div class="form-text mt-1">Administrator recipients come from local groups and configured external authentication roles.</div>
+                                </div>
+                                <div class="col-md-8">
+                                    <label class="form-label">Additional recipient emails</label>
+                                    <textarea name="app_notify_new_user_extra_emails" class="form-control" rows="2"><?= h($cfg(['app', 'notification_new_user_extra_emails'], '')) ?></textarea>
+                                    <div class="form-text">Optional comma/newline list. These recipients are added to enabled administrator recipients.</div>
+                                </div>
+                            </div>
+                            <?php layout_notification_template_editor('new_user_registered', $config); ?>
                         </div>
 
                         <div class="border rounded p-3 mb-3">

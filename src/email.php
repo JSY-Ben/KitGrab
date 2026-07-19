@@ -245,6 +245,11 @@ function layout_notification_template_definitions(): array
             'config_key' => 'notification_mark_missed_template_html',
             'default' => '<p>Reservation <strong>#{{reservation_id}}</strong> for {{person_name}} has been marked as missed.</p><p><strong>Equipment:</strong> {{equipment_list}}<br><strong>Scheduled start:</strong> {{start_date}}<br><strong>Scheduled return:</strong> {{return_date}}</p><p>{{reservation_link}}</p>',
         ],
+        'new_user_registered' => [
+            'label' => 'New user created email text',
+            'config_key' => 'notification_new_user_template_html',
+            'default' => '<p>A new user account has been created.</p><p><strong>Name:</strong> {{person_name}}<br><strong>Email:</strong> {{person_email}}<br><strong>Username:</strong> {{username}}<br><strong>Approval status:</strong> {{approval_status}}</p>',
+        ],
     ];
 }
 
@@ -308,7 +313,7 @@ function layout_render_notification_template(string $templateKey, array $variabl
         }
     }
     // Known but unavailable values become empty rather than leaking a token.
-    foreach (['recipient_name','person_name','person_email','equipment_list','start_date','return_date','app_name','reservation_id','reservation_link','my_reservations_link','staff_reservations_link','staff_name','staff_email','note','reservation_note'] as $name) {
+    foreach (['recipient_name','person_name','person_email','username','approval_status','login_link','equipment_list','start_date','return_date','app_name','reservation_id','reservation_link','my_reservations_link','staff_reservations_link','staff_name','staff_email','note','reservation_note'] as $name) {
         $token = '{{' . $name . '}}';
         $htmlReplacements[$token] = $htmlReplacements[$token] ?? '';
         $textReplacements[$token] = $textReplacements[$token] ?? '';
@@ -980,6 +985,43 @@ function layout_role_notification_recipients(
         (string)($appCfg['overdue_staff_name'] ?? ''),
         $excludeEmails
     );
+}
+
+function layout_notify_new_user_created(array $user, ?array $cfg = null): void
+{
+    $config = $cfg ?? load_config();
+    $appCfg = $config['app'] ?? [];
+    if (array_key_exists('notification_new_user_enabled', $appCfg) && empty($appCfg['notification_new_user_enabled'])) {
+        return;
+    }
+
+    $email = trim((string)($user['email'] ?? ''));
+    $name = trim((string)($user['first_name'] ?? '') . ' ' . (string)($user['last_name'] ?? ''));
+    $name = $name !== '' ? $name : $email;
+    $variables = [
+        'person_name' => $name,
+        'person_email' => $email,
+        'username' => (string)($user['username'] ?? ''),
+        'approval_status' => !empty($user['is_approved']) ? 'Approved' : 'Pending administrator approval',
+    ];
+    $lines = [
+        'A new user account has been created.',
+        'Name: ' . $name,
+        'Email: ' . $email,
+        'Username: ' . (string)($user['username'] ?? ''),
+        'Approval status: ' . $variables['approval_status'],
+    ];
+
+    $notified = [];
+    if (!array_key_exists('notification_new_user_send_admins', $appCfg) || !empty($appCfg['notification_new_user_send_admins'])) {
+        foreach (layout_role_notification_recipients(false, true, $config) as $recipient) {
+            layout_send_notification($recipient['email'], $recipient['name'], 'New user account created', $lines, $config, true, 'new_user_registered', $variables);
+            $notified[] = $recipient['email'];
+        }
+    }
+    foreach (layout_extra_notification_recipients((string)($appCfg['notification_new_user_extra_emails'] ?? ''), $notified) as $recipient) {
+        layout_send_notification($recipient['email'], $recipient['name'], 'New user account created', $lines, $config, true, 'new_user_registered', $variables);
+    }
 }
 
 function encode_header(string $str): string
