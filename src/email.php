@@ -248,7 +248,7 @@ function layout_notification_template_definitions(): array
         'new_user_registered' => [
             'label' => 'New user created email text',
             'config_key' => 'notification_new_user_template_html',
-            'default' => '<p>A new user account has been created.</p><p><strong>Name:</strong> {{person_name}}<br><strong>Email:</strong> {{person_email}}<br><strong>Username:</strong> {{username}}<br><strong>Approval status:</strong> {{approval_status}}</p><p>{{users_admin_link}}</p>',
+            'default' => '<p>A new user account has been created.</p><p><strong>Name:</strong> {{person_name}}<br><strong>Email:</strong> {{person_email}}<br><strong>Username:</strong> {{username}}<br><strong>Approval status:</strong> {{approval_status}}</p><p><strong>Click here to approve the newly registered user:</strong><br>{{users_admin_link}}</p>',
         ],
         'welcome_user_approved' => [
             'label' => 'Welcome email for immediately approved users',
@@ -1026,7 +1026,7 @@ function layout_notify_new_user_created(array $user, ?array $cfg = null): void
         'Email: ' . $email,
         'Username: ' . (string)($user['username'] ?? ''),
         'Approval status: ' . $variables['approval_status'],
-        $variables['users_admin_link'] !== '' ? 'Manage users: ' . $variables['users_admin_link'] : null,
+        $variables['users_admin_link'] !== '' ? 'Click here to approve the newly registered user: ' . $variables['users_admin_link'] : null,
     ];
 
     $notified = [];
