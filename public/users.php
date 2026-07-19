@@ -5,6 +5,7 @@ require_once SRC_PATH . '/layout.php';
 require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/group_helpers.php';
 require_once SRC_PATH . '/email.php';
+require_once SRC_PATH . '/activity_log.php';
 
 $active  = basename($_SERVER['PHP_SELF']);
 $isAdmin = !empty($currentUser['is_admin']);
@@ -257,6 +258,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'Your account has been approved. You can now sign in.',
                         $loginUrl !== '' ? 'Sign in: ' . $loginUrl : null,
                     ];
+                    activity_log_event('user_approved', 'User account approved', [
+                        'subject_type' => 'user',
+                        'subject_id' => $approveId,
+                        'metadata' => [
+                            'user_name' => $approvedName,
+                            'user_email' => (string)$approvedUser['email'],
+                            'approval_status' => 'approved',
+                        ],
+                    ]);
                     $sent = layout_send_notification(
                         (string)$approvedUser['email'],
                         $approvedName,

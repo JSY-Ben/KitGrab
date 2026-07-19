@@ -3,6 +3,7 @@ require_once __DIR__ . '/../src/bootstrap.php';
 require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/layout.php';
 require_once SRC_PATH . '/email.php';
+require_once SRC_PATH . '/activity_log.php';
 
 session_start();
 $config = load_config();
@@ -72,6 +73,21 @@ if ($registrationEnabled && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':username' => $username,
                 ':password_hash' => password_hash($password, PASSWORD_DEFAULT),
                 ':is_approved' => $requiresApproval ? 0 : 1,
+            ]);
+            $newUserId = (int)$pdo->lastInsertId();
+            activity_log_event('user_registered', 'New user registered', [
+                'actor' => [
+                    'id' => $newUserId,
+                    'first_name' => $firstName,
+                    'last_name' => $lastName,
+                    'email' => $email,
+                ],
+                'subject_type' => 'user',
+                'subject_id' => $newUserId,
+                'metadata' => [
+                    'username' => $username,
+                    'approval_status' => $requiresApproval ? 'pending' : 'approved',
+                ],
             ]);
             layout_notify_new_user_created([
                 'first_name' => $firstName,
