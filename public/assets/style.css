@@ -2039,6 +2039,7 @@ form .form-select {
 .reservation-note-actions .btn:disabled { color:#94a3b8; background:#f1f5f9; border-color:#cbd5e1; opacity:.72; }
 .reservation-note-dialog-content { max-height:min(60vh,520px); overflow-y:auto; padding:1rem; border:1px solid var(--border); border-radius:.75rem; background:#f8fafc; white-space:pre-wrap; }
 #my-reservation-note-dialog::backdrop { background:rgba(15,23,42,.45); backdrop-filter:blur(3px); }
+#reservation-note-dialog::backdrop { background:rgba(15,23,42,.45); backdrop-filter:blur(3px); }
 .checked-out-item-thumb { width:48px; height:48px; flex:0 0 48px; border:1px solid rgba(15,23,42,.14); border-radius:.35rem; background:#fff; object-fit:contain; }
 .checked-out-item-thumb--placeholder { display:flex; align-items:center; justify-content:center; padding:.2rem; color:var(--muted); font-size:.56rem; line-height:1.1; text-align:center; }
 .reservation-history-table.my-reservations-history-table th:nth-child(1),.reservation-history-table.my-reservations-history-table td:nth-child(1){width:55px}

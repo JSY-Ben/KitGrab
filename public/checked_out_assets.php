@@ -154,6 +154,8 @@ $sortOptions = [
     'expected_desc',
     'tag_asc',
     'tag_desc',
+    'name_asc',
+    'name_desc',
     'model_asc',
     'model_desc',
     'user_asc',
@@ -293,6 +295,8 @@ try {
         $bTag = strtolower((string)($b['asset_tag'] ?? ''));
         $aModel = strtolower((string)($a['model']['name'] ?? ''));
         $bModel = strtolower((string)($b['model']['name'] ?? ''));
+        $aName = strtolower((string)($a['name'] ?? ''));
+        $bName = strtolower((string)($b['name'] ?? ''));
         $aUser = $a['assigned_to'] ?? ($a['assigned_to_fullname'] ?? '');
         $bUser = $b['assigned_to'] ?? ($b['assigned_to_fullname'] ?? '');
         if (is_array($aUser)) {
@@ -352,6 +356,10 @@ try {
                 return $cmpText($bTag, $aTag);
             case 'tag_asc':
                 return $cmpText($aTag, $bTag);
+            case 'name_desc':
+                return $cmpText($bName, $aName);
+            case 'name_asc':
+                return $cmpText($aName, $bName);
             case 'model_desc':
                 return $cmpText($bModel, $aModel);
             case 'model_asc':
@@ -463,6 +471,8 @@ function layout_checked_out_url(string $base, array $params): string
                     <option value="expected_desc" <?= $sort === 'expected_desc' ? 'selected' : '' ?>>Expected check-in (latest first)</option>
                     <option value="tag_asc" <?= $sort === 'tag_asc' ? 'selected' : '' ?>>Asset tag (A–Z)</option>
                     <option value="tag_desc" <?= $sort === 'tag_desc' ? 'selected' : '' ?>>Asset tag (Z–A)</option>
+                    <option value="name_asc" <?= $sort === 'name_asc' ? 'selected' : '' ?>>Name (A–Z)</option>
+                    <option value="name_desc" <?= $sort === 'name_desc' ? 'selected' : '' ?>>Name (Z–A)</option>
                     <option value="model_asc" <?= $sort === 'model_asc' ? 'selected' : '' ?>>Model (A–Z)</option>
                     <option value="model_desc" <?= $sort === 'model_desc' ? 'selected' : '' ?>>Model (Z–A)</option>
                     <option value="user_asc" <?= $sort === 'user_asc' ? 'selected' : '' ?>>User (A–Z)</option>
@@ -547,15 +557,14 @@ function layout_checked_out_url(string $base, array $params): string
                         <thead>
                             <tr>
                                 <th></th>
-                                <th>Image</th>
-                                <th>Asset Tag</th>
-                                <th>Name</th>
-                                <th>Model</th>
-                                <th>User</th>
-                                <th>Assigned Since</th>
-                                <th>Expected Check-in</th>
+                                <th><?= layout_sortable_column_header('Asset Tag','tag_asc','tag_desc',$sort) ?></th>
+                                <th><?= layout_sortable_column_header('Name','name_asc','name_desc',$sort) ?></th>
+                                <th><?= layout_sortable_column_header('Model','model_asc','model_desc',$sort) ?></th>
+                                <th><?= layout_sortable_column_header('User','user_asc','user_desc',$sort) ?></th>
+                                <th><?= layout_sortable_column_header('Assigned Since','checkout_asc','checkout_desc',$sort) ?></th>
+                                <th><?= layout_sortable_column_header('Expected Check-in','expected_asc','expected_desc',$sort) ?></th>
                                 <th>Renew to</th>
-                                <th></th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -588,9 +597,8 @@ function layout_checked_out_url(string $base, array $params): string
                                                name="bulk_asset_ids[]"
                                                value="<?= $aid ?>">
                                     </td>
-                                    <td><?php if ($modelImage !== ''): ?><img src="<?= h($modelImage) ?>" alt="" class="item-thumbnail" loading="lazy"><?php endif; ?></td>
                                     <td><?= h($atag) ?></td>
-                                    <td><?= h($name) ?></td>
+                                    <td><div class="d-flex align-items-center gap-2"><?php if ($modelImage !== ''): ?><img src="<?= h($modelImage) ?>" alt="<?= h($name . ' thumbnail') ?>" class="checked-out-item-thumb" loading="lazy"><?php else: ?><div class="checked-out-item-thumb checked-out-item-thumb--placeholder">No image</div><?php endif; ?><div class="fw-semibold"><?= h($name) ?></div></div></td>
                                     <td><?= h($model) ?></td>
                                     <td><?= h($user) ?></td>
                                     <td><?= h(format_display_datetime($checkedOut)) ?></td>

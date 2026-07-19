@@ -72,6 +72,8 @@ $sortOptions = [
     'status_desc' => 'status DESC',
     'id_desc' => 'id DESC',
     'id_asc' => 'id ASC',
+    'items_asc' => '(SELECT MIN(ri_sort.model_name_cache) FROM reservation_items ri_sort WHERE ri_sort.reservation_id = reservations.id) ASC',
+    'items_desc' => '(SELECT MIN(ri_sort.model_name_cache) FROM reservation_items ri_sort WHERE ri_sort.reservation_id = reservations.id) DESC',
 ];
 if ($sortRaw !== '' && array_key_exists($sortRaw, $sortOptions)) { $_SESSION['staff_reservations_sort'] = $sortRaw; }
 $sort = array_key_exists($sortRaw, $sortOptions) ? $sortRaw : (string)($_SESSION['staff_reservations_sort'] ?? 'start_desc');
@@ -386,6 +388,8 @@ try {
                         <option value="status_desc" <?= $sort === 'status_desc' ? 'selected' : '' ?>>Status (Z–A)</option>
                         <option value="id_desc" <?= $sort === 'id_desc' ? 'selected' : '' ?>>Reservation ID (high → low)</option>
                         <option value="id_asc" <?= $sort === 'id_asc' ? 'selected' : '' ?>>Reservation ID (low → high)</option>
+                        <option value="items_asc" <?= $sort === 'items_asc' ? 'selected' : '' ?>>Items (A–Z)</option>
+                        <option value="items_desc" <?= $sort === 'items_desc' ? 'selected' : '' ?>>Items (Z–A)</option>
                     </select>
                 </div>
                 <div class="col-auto">
@@ -421,13 +425,13 @@ try {
                 <table class="table table-sm table-striped align-middle reservation-history-table">
                     <thead>
                         <tr>
-                            <th>ID</th>
-                            <th>User Name</th>
-                            <th>Items Reserved</th>
-                            <th>Start</th>
-                            <th>End</th>
-                            <th>Status</th>
-                            <th style="width: 180px;">Actions</th>
+                            <th><?= layout_sortable_column_header('ID','id_asc','id_desc',$sort) ?></th>
+                            <th><?= layout_sortable_column_header('User Name','user_asc','user_desc',$sort) ?></th>
+                            <th><?= layout_sortable_column_header('Items Reserved','items_asc','items_desc',$sort) ?></th>
+                            <th><?= layout_sortable_column_header('Start','start_asc','start_desc',$sort) ?></th>
+                            <th><?= layout_sortable_column_header('End','end_asc','end_desc',$sort) ?></th>
+                            <th><?= layout_sortable_column_header('Status','status_asc','status_desc',$sort) ?></th>
+                            <th style="width:230px">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -450,12 +454,12 @@ try {
                                 $status     = strtolower((string)($r['status'] ?? ''));
                                 if ($itemsText !== '') {
                                     $modelsHtml = '<details class="items-section">'
-                                        . '<summary><strong>Models Reserved:</strong></summary>'
+                                        . '<summary><strong>Items Reserved:</strong></summary>'
                                         . '<div class="items-section-body items-section-body--scroll">' . $itemsText . '</div>'
                                         . '</details>';
                                 }
                                 $assetsHtml = '';
-                                if (!empty($r['asset_name_cache'])) {
+                                if (!empty($r['asset_name_cache']) && strcasecmp(trim((string)$r['asset_name_cache']), 'Pending checkout') !== 0) {
                                     $assetRaw = (string)$r['asset_name_cache'];
                                     $assetParts = preg_split('/,(?![^()]*\\))/', $assetRaw);
                                     $assetParts = array_values(array_filter(array_map('trim', $assetParts), 'strlen'));
@@ -484,15 +488,14 @@ try {
                                         . '</details>';
                                 }
                                 $itemsText = $modelsHtml . $assetsHtml;
+                                $reservationNote = trim((string)($r['reservation_note'] ?? ''));
+                                $checkoutNote = trim((string)($r['checkout_note'] ?? ''));
                             ?>
                             <tr>
                                 <td data-label="ID">#<?= (int)$r['id'] ?></td>
                                 <td data-label="User Name"><?= h($r['user_name'] ?? '(Unknown)') ?></td>
                                 <td data-label="Items Reserved" class="items-cell">
-                                    <?php if (!empty($items[0]['image'])): ?><img src="<?= h($items[0]['image']) ?>" alt="" class="item-thumbnail mb-2" loading="lazy"><?php endif; ?>
                                     <?= $itemsText !== '' ? '<div class="items-cell-content">' . $itemsText . '</div>' : '' ?>
-                                    <?php if (!empty($r['reservation_note'])): ?><details class="mt-2"><summary class="btn btn-sm btn-outline-secondary">Reservation note</summary><div class="small mt-2"><?= nl2br(h($r['reservation_note'])) ?></div></details><?php endif; ?>
-                                    <?php if (!empty($r['checkout_note'])): ?><details class="mt-2"><summary class="btn btn-sm btn-outline-secondary">Checkout note</summary><div class="small mt-2"><?= nl2br(h($r['checkout_note'])) ?></div></details><?php endif; ?>
                                 </td>
                                 <td data-label="Start"><?= display_datetime($r['start_datetime'] ?? '') ?></td>
                                 <td data-label="End"><?= display_datetime($r['end_datetime'] ?? '') ?></td>
@@ -552,6 +555,10 @@ try {
                                         </form>
                                         <?php endif; ?>
                                     </div>
+                                    <div class="d-grid gap-2 mt-2 reservation-note-actions">
+                                        <button type="button" class="btn btn-sm btn-outline-primary js-view-reservation-note" data-note-title="Reservation #<?= (int)$r['id'] ?> — Reservation Notes" data-note="<?= h((string)json_encode($reservationNote,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)) ?>" <?= $reservationNote===''?'disabled aria-disabled="true"':'' ?>>View Reservation Notes</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary js-view-reservation-note" data-note-title="Reservation #<?= (int)$r['id'] ?> — Checkout Notes" data-note="<?= h((string)json_encode($checkoutNote,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)) ?>" <?= $checkoutNote===''?'disabled aria-disabled="true"':'' ?>>View Checkout Notes</button>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -598,6 +605,9 @@ try {
                 </nav>
             <?php endif; ?>
         <?php endif; ?>
+
+        <dialog id="reservation-note-dialog" class="border-0 rounded-3 shadow p-0" style="max-width:620px;width:calc(100% - 2rem)"><div class="p-4"><div class="d-flex justify-content-between align-items-start gap-3 mb-3"><h5 id="reservation-note-dialog-title" class="mb-0">Reservation Notes</h5><button type="button" class="btn-close" id="close-reservation-note-dialog" aria-label="Close"></button></div><div id="reservation-note-dialog-content" class="reservation-note-dialog-content"></div></div></dialog>
+        <script>(function(){const dialog=document.getElementById('reservation-note-dialog');const title=document.getElementById('reservation-note-dialog-title');const content=document.getElementById('reservation-note-dialog-content');if(!dialog||!title||!content)return;document.querySelectorAll('.js-view-reservation-note:not([disabled])').forEach(function(button){button.addEventListener('click',function(){title.textContent=button.dataset.noteTitle||'Reservation Notes';try{content.textContent=JSON.parse(button.dataset.note||'""');}catch(_){content.textContent='';}dialog.showModal();});});const close=document.getElementById('close-reservation-note-dialog');if(close)close.addEventListener('click',function(){dialog.close();});}());</script>
 
 <?php if (!$embedded): ?>
     </div>
