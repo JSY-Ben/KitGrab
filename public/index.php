@@ -49,10 +49,10 @@ $registrationEnabled = !empty(($config['auth'] ?? [])['registration_enabled']);
                     Browsing as <strong>Guest</strong>. Sign in to add items to your basket and place reservations.
                 </div>
                 <div class="top-bar-actions d-flex align-items-center gap-2">
+                    <a href="login.php" class="btn btn-primary btn-sm">Log in</a>
                     <?php if ($registrationEnabled): ?>
                         <a href="register.php" class="btn btn-outline-primary btn-sm">Register</a>
                     <?php endif; ?>
-                    <a href="login.php" class="btn btn-primary btn-sm">Log in</a>
                 </div>
             <?php endif; ?>
         </div>
