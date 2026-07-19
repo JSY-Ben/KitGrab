@@ -1354,7 +1354,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
             </div>
 
             <div class="col-12<?= $settingsTab === 'users' ? '' : ' d-none' ?>" data-settings-group="users">
-                <div class="card">
+                <div class="card mb-3">
                     <div class="card-body">
                         <h5 class="card-title mb-1">User registration</h5>
                         <p class="text-muted small mb-3">Control whether visitors can create local user accounts.</p>
@@ -1386,8 +1386,15 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                             </div>
                             <div class="form-text">Newly registered users cannot sign in until an administrator approves them from the Users page.</div>
                         </div>
+                    </div>
+                </div>
 
-                        <div class="border rounded p-3 mt-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title mb-1">User Profiles</h5>
+                        <p class="text-muted small mb-3">Control whether local users can manage their details and use profile photos.</p>
+
+                        <div class="border rounded p-3 mb-3">
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" name="auth_users_can_edit_profile" id="auth_users_can_edit_profile" <?= $cfg(['auth', 'users_can_edit_profile'], false) ? 'checked' : '' ?>>
                                 <label class="form-check-label fw-semibold" for="auth_users_can_edit_profile">Allow users to edit their profile</label>
@@ -1395,7 +1402,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                             <div class="form-text">Local users can update their name, email address, username, and password from their profile page.</div>
                         </div>
 
-                        <div class="border rounded p-3 mt-3">
+                        <div class="border rounded p-3">
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" name="auth_user_photos_enabled" id="auth_user_photos_enabled" <?= $cfg(['auth', 'user_photos_enabled'], false) ? 'checked' : '' ?>>
                                 <label class="form-check-label fw-semibold" for="auth_user_photos_enabled">Allow user photos</label>
