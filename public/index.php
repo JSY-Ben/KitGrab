@@ -8,6 +8,7 @@ $active  = basename($_SERVER['PHP_SELF']);
 $isAdmin = !empty($currentUser['is_admin']);
 $isStaff = !empty($currentUser['is_staff']) || $isAdmin;
 $isAuthenticated = isset($isAuthenticated) ? (bool)$isAuthenticated : !empty($currentUser['email']);
+$registrationEnabled = !empty(($config['auth'] ?? [])['registration_enabled']);
 ?>
 <!DOCTYPE html>
 <html>
@@ -47,7 +48,10 @@ $isAuthenticated = isset($isAuthenticated) ? (bool)$isAuthenticated : !empty($cu
                 <div class="top-bar-user">
                     Browsing as <strong>Guest</strong>. Sign in to add items to your basket and place reservations.
                 </div>
-                <div class="top-bar-actions">
+                <div class="top-bar-actions d-flex align-items-center gap-2">
+                    <?php if ($registrationEnabled): ?>
+                        <a href="register.php" class="btn btn-outline-primary btn-sm">Register</a>
+                    <?php endif; ?>
                     <a href="login.php" class="btn btn-primary btn-sm">Log in</a>
                 </div>
             <?php endif; ?>
