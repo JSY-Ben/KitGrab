@@ -27,6 +27,43 @@ function display_datetime(?string $isoDatetime): string
     return app_format_datetime($isoDatetime);
 }
 
+function reservation_latest_checkin_notes(PDO $pdo, string $assetCache): string
+{
+    $parts = preg_split('/,(?![^()]*\))/', $assetCache) ?: [];
+    $tags = [];
+    foreach ($parts as $part) {
+        $part = trim($part);
+        if ($part === '' || strcasecmp($part, 'Pending checkout') === 0) { continue; }
+        $open = strpos($part, ' (');
+        $tag = trim($open === false ? $part : substr($part, 0, $open));
+        if ($tag !== '') { $tags[$tag] = true; }
+    }
+    if (!$tags) { return ''; }
+
+    try {
+        $placeholders = implode(',', array_fill(0, count($tags), '?'));
+        $stmt = $pdo->prepare("SELECT a.asset_tag, n.note, n.actor_name, n.created_at
+            FROM assets a JOIN asset_notes n ON n.asset_id = a.id
+            WHERE n.note_type = 'checkin' AND a.asset_tag IN ({$placeholders})
+            ORDER BY a.asset_tag ASC, n.created_at DESC, n.id DESC");
+        $stmt->execute(array_keys($tags));
+        $latest = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $tag = (string)($row['asset_tag'] ?? '');
+            if ($tag === '' || isset($latest[$tag])) { continue; }
+            $note = trim((string)($row['note'] ?? ''));
+            if ($note === '') { continue; }
+            $meta = [];
+            if (!empty($row['actor_name'])) { $meta[] = (string)$row['actor_name']; }
+            if (!empty($row['created_at'])) { $meta[] = display_datetime((string)$row['created_at']); }
+            $latest[$tag] = $tag . ($meta ? ' — ' . implode(', ', $meta) : '') . "\n" . $note;
+        }
+        return implode("\n\n", array_values($latest));
+    } catch (Throwable $e) {
+        return '';
+    }
+}
+
 // Only staff/admin allowed
 if (!$isStaff) {
     http_response_code(403);
@@ -490,6 +527,7 @@ try {
                                 $itemsText = $modelsHtml . $assetsHtml;
                                 $reservationNote = trim((string)($r['reservation_note'] ?? ''));
                                 $checkoutNote = trim((string)($r['checkout_note'] ?? ''));
+                                $checkinNotes = reservation_latest_checkin_notes($pdo, (string)($r['asset_name_cache'] ?? ''));
                             ?>
                             <tr>
                                 <td data-label="ID">#<?= (int)$r['id'] ?></td>
@@ -558,6 +596,7 @@ try {
                                     <div class="d-grid gap-2 mt-2 reservation-note-actions">
                                         <button type="button" class="btn btn-sm btn-outline-primary js-view-reservation-note" data-note-title="Reservation #<?= (int)$r['id'] ?> — Reservation Notes" data-note="<?= h((string)json_encode($reservationNote,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)) ?>" <?= $reservationNote===''?'disabled aria-disabled="true"':'' ?>>View Reservation Notes</button>
                                         <button type="button" class="btn btn-sm btn-outline-secondary js-view-reservation-note" data-note-title="Reservation #<?= (int)$r['id'] ?> — Checkout Notes" data-note="<?= h((string)json_encode($checkoutNote,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)) ?>" <?= $checkoutNote===''?'disabled aria-disabled="true"':'' ?>>View Checkout Notes</button>
+                                        <button type="button" class="btn btn-sm btn-outline-success js-view-reservation-note" data-note-title="Reservation #<?= (int)$r['id'] ?> — Check-in Notes" data-note="<?= h((string)json_encode($checkinNotes,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)) ?>" <?= $checkinNotes===''?'disabled aria-disabled="true"':'' ?>>View Check-in Notes</button>
                                     </div>
                                 </td>
                             </tr>
