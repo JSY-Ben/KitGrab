@@ -1769,6 +1769,78 @@ form .form-select {
     box-shadow: 0 8px 18px rgba(var(--primary-rgb), 0.2);
 }
 
+/* Notification settings category tabs */
+.notification-group-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.45rem 0.45rem 0;
+    border: 1px solid rgba(var(--primary-rgb), 0.24);
+    border-bottom: 3px solid var(--primary-strong);
+    border-radius: 0.75rem 0.75rem 0 0;
+    background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.08), rgba(var(--primary-rgb), 0.02));
+}
+
+.notification-group-tabs .nav-link {
+    position: relative;
+    margin-bottom: -1px;
+    padding: 0.75rem 1rem;
+    border: 1px solid rgba(var(--primary-rgb), 0.28);
+    border-bottom: 0;
+    border-radius: 0.55rem 0.55rem 0 0;
+    background: rgba(255, 255, 255, 0.82);
+    color: var(--primary-strong);
+    font-size: 0.9rem;
+    font-weight: 700;
+    box-shadow: 0 -2px 8px rgba(var(--primary-rgb), 0.05);
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease;
+}
+
+.notification-group-tabs .nav-link:hover,
+.notification-group-tabs .nav-link:focus-visible {
+    border-color: rgba(var(--primary-rgb), 0.55);
+    background: rgba(var(--primary-rgb), 0.12);
+    color: var(--primary);
+    transform: translateY(-1px);
+}
+
+.notification-group-tabs .nav-link.active {
+    border-color: var(--primary-strong);
+    background: linear-gradient(135deg, var(--primary), var(--primary-strong));
+    color: #fff;
+    box-shadow: 0 7px 16px rgba(var(--primary-rgb), 0.24);
+}
+
+.notification-group-tabs .nav-link.active::after {
+    content: "";
+    position: absolute;
+    right: 0.75rem;
+    bottom: -3px;
+    left: 0.75rem;
+    height: 3px;
+    border-radius: 999px 999px 0 0;
+    background: #fff;
+}
+
+@media (max-width: 575.98px) {
+    .notification-group-tabs {
+        padding: 0.4rem;
+        border-bottom-width: 1px;
+        border-radius: 0.75rem;
+    }
+
+    .notification-group-tabs .nav-link {
+        flex: 1 1 calc(50% - 0.35rem);
+        margin-bottom: 0;
+        border-bottom: 1px solid rgba(var(--primary-rgb), 0.28);
+        border-radius: 0.5rem;
+    }
+
+    .notification-group-tabs .nav-link.active::after {
+        display: none;
+    }
+}
+
 /* --------------------------------------------------
    Checked-out reservations table
 -------------------------------------------------- */
