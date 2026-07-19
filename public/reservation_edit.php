@@ -461,9 +461,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <div class="top-bar-actions d-flex align-items-center gap-2">
                 <?= layout_edit_profile_button($currentUser) ?>
+                <a href="logout.php" class="btn btn-link btn-sm">Log out</a>
                 <?php $backLabel = $fromMy ? 'Back to My Reservations' : 'Back to reservations'; ?>
                 <a href="<?= h($actionUrl) ?>" class="btn btn-outline-secondary btn-sm"><?= h($backLabel) ?></a>
-                <a href="logout.php" class="btn btn-link btn-sm">Log out</a>
             </div>
         </div>
 

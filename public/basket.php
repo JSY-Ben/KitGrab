@@ -218,10 +218,10 @@ if (!empty($basket)) {
             </div>
             <div class="top-bar-actions d-flex align-items-center gap-2">
                 <?= layout_edit_profile_button($currentUser) ?>
+                <a href="logout.php" class="btn btn-link btn-sm">Log out</a>
                 <a href="<?= h($catalogueBackUrl) ?>" class="btn btn-outline-primary">
                     Back to catalogue
                 </a>
-                <a href="logout.php" class="btn btn-link btn-sm">Log out</a>
             </div>
         </div>
 

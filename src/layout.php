@@ -364,7 +364,7 @@ if (!function_exists('layout_edit_profile_button')) {
         $config = $cfg ?? layout_cached_config();
         $isLocal = strtolower(trim((string)($user['auth_source'] ?? 'local'))) === 'local';
         if (empty($config['auth']['users_can_edit_profile']) || !$isLocal) return '';
-        return '<a href="profile.php" class="btn btn-outline-primary btn-sm">Edit User Profile</a>';
+        return '<a href="profile.php" class="btn btn-outline-primary btn-sm">Edit my Profile</a>';
     }
 }
 

@@ -127,8 +127,8 @@ $active  = $isStaff ? 'staff_reservations.php' : 'my_bookings.php';
             </div>
             <div class="top-bar-actions d-flex align-items-center gap-2">
                 <?= layout_edit_profile_button($currentUser) ?>
-                <a href="<?= $isStaff ? 'staff_reservations.php' : 'my_bookings.php' ?>" class="btn btn-outline-secondary btn-sm"><?= $isStaff ? 'Back to all bookings' : 'Back to My Reservations' ?></a>
                 <a href="logout.php" class="btn btn-link btn-sm">Log out</a>
+                <a href="<?= $isStaff ? 'staff_reservations.php' : 'my_bookings.php' ?>" class="btn btn-outline-secondary btn-sm"><?= $isStaff ? 'Back to all bookings' : 'Back to My Reservations' ?></a>
             </div>
         </div>
 
