@@ -426,6 +426,12 @@ input[type="checkbox"] {
     color: var(--text);
 }
 
+.user-identity { display:inline-flex; align-items:center; gap:.55rem; vertical-align:middle; }
+.user-identity__text { display:inline-flex; flex-direction:column; min-width:0; line-height:1.2; }
+.user-identity__email { color:var(--muted); font-size:.76rem; font-weight:400; }
+.user-avatar { width:34px; height:34px; flex:0 0 34px; border:2px solid rgba(var(--primary-rgb),.22); border-radius:50%; background:#fff; object-fit:cover; box-shadow:0 3px 10px rgba(15,23,42,.12); }
+.user-avatar--initials { display:inline-flex; align-items:center; justify-content:center; background:linear-gradient(135deg,var(--primary),var(--primary-strong)); color:#fff; font-size:.68rem; font-weight:800; letter-spacing:.03em; }
+
 .top-bar-actions {
     display: flex;
     align-items: center;

@@ -491,7 +491,7 @@ if ($selectedUser) {
                                 ?>
                                 <tr>
                                     <td>
-                                        <div class="fw-semibold"><?= h($label !== '' ? $label : 'Unknown user') ?></div>
+                                        <?= layout_user_identity_by_email($label !== '' ? $label : 'Unknown user', $email, false) ?>
                                         <?php if ($subLabel !== ''): ?>
                                             <div class="text-muted small"><?= h($subLabel) ?></div>
                                         <?php endif; ?>

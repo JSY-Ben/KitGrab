@@ -123,10 +123,10 @@ $active  = $isStaff ? 'staff_reservations.php' : 'my_bookings.php';
         <div class="top-bar mb-3">
             <div class="top-bar-user">
                 Logged in as:
-                <strong><?= h(trim(($currentUser['first_name'] ?? '') . ' ' . ($currentUser['last_name'] ?? ''))) ?></strong>
-                (<?= h($currentUser['email'] ?? '') ?>)
+                <?= layout_user_identity($currentUser, true) ?>
             </div>
-            <div class="top-bar-actions">
+            <div class="top-bar-actions d-flex align-items-center gap-2">
+                <?= layout_edit_profile_button($currentUser) ?>
                 <a href="<?= $isStaff ? 'staff_reservations.php' : 'my_bookings.php' ?>" class="btn btn-outline-secondary btn-sm"><?= $isStaff ? 'Back to all bookings' : 'Back to My Reservations' ?></a>
                 <a href="logout.php" class="btn btn-link btn-sm">Log out</a>
             </div>
@@ -137,7 +137,7 @@ $active  = $isStaff ? 'staff_reservations.php' : 'my_bookings.php';
                 <h5 class="card-title">Booking information</h5>
                 <p class="card-text">
                     <strong>User Name:</strong>
-                    <?= h($reservation['user_name'] ?? '(Unknown)') ?><br>
+                    <?= layout_user_identity_by_email((string)($reservation['user_name'] ?? 'Unknown'), (string)($reservation['user_email'] ?? ''), true) ?><br>
 
                     <strong>Start:</strong>
                     <?= display_datetime($reservation['start_datetime'] ?? '') ?><br>

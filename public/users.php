@@ -35,7 +35,7 @@ if ($exportType === 'users') {
     $out = fopen('php://output', 'w');
     fputcsv($out, ['id', 'first_name', 'last_name', 'email', 'username', 'auth_source', 'is_approved', 'created_at']);
     $rows = $pdo->query('
-        SELECT id, first_name, last_name, email, username, is_admin, is_staff, auth_source, is_approved, created_at
+        SELECT id, first_name, last_name, email, username, is_admin, is_staff, auth_source, is_approved, profile_photo_url, created_at
           FROM users
          ORDER BY first_name ASC, last_name ASC, email ASC
     ')->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -403,7 +403,7 @@ $groups = [];
 $userGroups = [];
 try {
     $stmt = $pdo->query('
-        SELECT id, first_name, last_name, email, username, is_admin, is_staff, auth_source, is_approved, created_at
+        SELECT id, first_name, last_name, email, username, is_admin, is_staff, auth_source, is_approved, profile_photo_url, created_at
           FROM users
          ORDER BY first_name ASC, last_name ASC, email ASC
     ');
@@ -450,10 +450,10 @@ if ($groupsAvailable) {
         <div class="top-bar mb-3">
             <div class="top-bar-user">
                 Logged in as:
-                <strong><?= h(trim(($currentUser['first_name'] ?? '') . ' ' . ($currentUser['last_name'] ?? ''))) ?></strong>
-                (<?= h($currentUser['email'] ?? '') ?>)
+                <?= layout_user_identity($currentUser, true) ?>
             </div>
-            <div class="top-bar-actions">
+            <div class="top-bar-actions d-flex align-items-center gap-2">
+                <?= layout_edit_profile_button($currentUser) ?>
                 <a href="logout.php" class="btn btn-link btn-sm">Log out</a>
             </div>
         </div>
@@ -577,7 +577,7 @@ if ($groupsAvailable) {
                                         data-source="<?= h($sourceValue) ?>"
                                         data-groups="<?= h($groupLabelText) ?>"
                                         data-created="<?= h($createdAtSort) ?>">
-                                        <td><?= h($user['first_name'] ?? '') ?></td>
+                                        <td><span class="user-identity"><?= layout_user_avatar($user) ?><span><?= h($user['first_name'] ?? '') ?></span></span></td>
                                         <td><?= h($user['last_name'] ?? '') ?></td>
                                         <td><?= h($user['email'] ?? '') ?></td>
                                         <td><?= h($user['username'] ?? '') ?></td>

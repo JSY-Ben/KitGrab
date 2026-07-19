@@ -4,6 +4,7 @@ require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/layout.php';
 require_once SRC_PATH . '/email.php';
 require_once SRC_PATH . '/activity_log.php';
+require_once SRC_PATH . '/user_profile.php';
 
 session_start();
 $config = load_config();
@@ -12,6 +13,7 @@ $registrationEnabled = !empty($authConfig['registration_enabled']);
 $requiresApproval = !empty($authConfig['registration_requires_approval']);
 $errors = [];
 $registered = false;
+$photoErrors = [];
 
 if (!$registrationEnabled) {
     http_response_code(404);
@@ -75,6 +77,13 @@ if ($registrationEnabled && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':is_approved' => $requiresApproval ? 0 : 1,
             ]);
             $newUserId = (int)$pdo->lastInsertId();
+            if (!empty($authConfig['user_photos_enabled']) && isset($_FILES['profile_photo']) && is_array($_FILES['profile_photo'])) {
+                $photoPath = user_profile_photo_upload($_FILES['profile_photo'], $newUserId, $photoErrors);
+                if ($photoPath !== null) {
+                    $photoStmt = $pdo->prepare('UPDATE users SET profile_photo_url = :photo WHERE id = :id');
+                    $photoStmt->execute([':photo' => $photoPath, ':id' => $newUserId]);
+                }
+            }
             activity_log_event('user_registered', 'New user registered', [
                 'actor' => [
                     'id' => $newUserId,
@@ -145,6 +154,7 @@ if ($registrationEnabled && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     ? 'Your account has been created and is waiting for administrator approval. You will recieve an email once your account has been approved.'
                     : 'Your account has been created. You can now sign in.' ?>
             </div>
+            <?php if ($photoErrors): ?><div class="alert alert-warning"><?= layout_html_escape(implode(' ', $photoErrors)) ?></div><?php endif; ?>
             <a href="login.php" class="btn btn-primary w-100">Back to sign in</a>
         <?php else: ?>
             <?php if ($errors): ?>
@@ -152,7 +162,7 @@ if ($registrationEnabled && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     <?php foreach ($errors as $error): ?><li><?= layout_html_escape($error) ?></li><?php endforeach; ?>
                 </ul></div>
             <?php endif; ?>
-            <form method="post" class="card p-3 mt-3">
+            <form method="post" class="card p-3 mt-3" enctype="multipart/form-data">
                 <input type="hidden" name="csrf_token" value="<?= layout_html_escape($_SESSION['registration_csrf']) ?>">
                 <div class="row g-3">
                     <div class="col-sm-6">
@@ -180,6 +190,13 @@ if ($registrationEnabled && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         <label for="register_password_confirmation" class="form-label">Confirm password</label>
                         <input type="password" class="form-control" id="register_password_confirmation" name="password_confirmation" autocomplete="new-password" minlength="12" required>
                     </div>
+                    <?php if (!empty($authConfig['user_photos_enabled'])): ?>
+                        <div class="col-12">
+                            <label for="profile_photo" class="form-label">Profile photo <span class="text-muted">(optional)</span></label>
+                            <input type="file" class="form-control" id="profile_photo" name="profile_photo" accept="image/jpeg,image/png,image/gif,image/webp">
+                            <div class="form-text">JPG, PNG, GIF, or WEBP; maximum 4 MB.</div>
+                        </div>
+                    <?php endif; ?>
                 </div>
                 <button type="submit" class="btn btn-primary w-100 mt-3">Create account</button>
             </form>

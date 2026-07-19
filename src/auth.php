@@ -65,7 +65,7 @@ if (!$isAuthenticated) {
     if (!empty($currentUser['email'])) {
         try {
             require_once SRC_PATH . '/db.php';
-            $stmt = $pdo->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
+            $stmt = $pdo->prepare('SELECT id, profile_photo_url, auth_source FROM users WHERE email = :email LIMIT 1');
             $stmt->execute([':email' => strtolower(trim($currentUser['email']))]);
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
             if ($row) {
@@ -74,6 +74,10 @@ if (!$isAuthenticated) {
                 $currentUser['is_staff'] = !empty($roles['is_staff']) || $currentUser['is_admin'];
                 $_SESSION['user']['is_admin'] = $currentUser['is_admin'];
                 $_SESSION['user']['is_staff'] = $currentUser['is_staff'];
+                $currentUser['profile_photo_url'] = (string)($row['profile_photo_url'] ?? '');
+                $currentUser['auth_source'] = (string)($row['auth_source'] ?? '');
+                $_SESSION['user']['profile_photo_url'] = $currentUser['profile_photo_url'];
+                $_SESSION['user']['auth_source'] = $currentUser['auth_source'];
             }
         } catch (Throwable $e) {
             // Ignore role refresh failures to avoid blocking access.

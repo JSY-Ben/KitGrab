@@ -342,10 +342,10 @@ try {
             <div class="top-bar mb-3">
                 <div class="top-bar-user">
                     Logged in as:
-                    <strong><?= h(trim(($currentUser['first_name'] ?? '') . ' ' . ($currentUser['last_name'] ?? ''))) ?></strong>
-                    (<?= h($currentUser['email'] ?? '') ?>)
+                <?= layout_user_identity($currentUser, true) ?>
                 </div>
-                <div class="top-bar-actions">
+            <div class="top-bar-actions d-flex align-items-center gap-2">
+                <?= layout_edit_profile_button($currentUser) ?>
                     <a href="logout.php" class="btn btn-link btn-sm">Log out</a>
                 </div>
             </div>
@@ -531,7 +531,7 @@ try {
                             ?>
                             <tr>
                                 <td data-label="ID">#<?= (int)$r['id'] ?></td>
-                                <td data-label="User Name"><?= h($r['user_name'] ?? '(Unknown)') ?></td>
+                                <td data-label="User Name"><?= layout_user_identity_by_email((string)($r['user_name'] ?? 'Unknown'), (string)($r['user_email'] ?? ''), false) ?></td>
                                 <td data-label="Items Reserved" class="items-cell">
                                     <?= $itemsText !== '' ? '<div class="items-cell-content">' . $itemsText . '</div>' : '' ?>
                                 </td>

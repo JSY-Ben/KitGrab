@@ -43,6 +43,8 @@ return [
         'microsoft_oauth_enabled' => false,
         'registration_enabled' => false,
         'registration_requires_approval' => true,
+        'users_can_edit_profile' => false,
+        'user_photos_enabled' => false,
         // Optional role mappings for external auth providers
         'admin_group_cn' => [],
         'checkout_group_cn' => [],

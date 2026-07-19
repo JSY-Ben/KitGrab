@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) DEFAULT NULL,
     auth_source VARCHAR(32) NOT NULL DEFAULT 'local',
     is_approved TINYINT(1) NOT NULL DEFAULT 1,
+    profile_photo_url VARCHAR(1024) DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (id),

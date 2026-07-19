@@ -360,6 +360,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installLocked) {
         $newConfig['auth']['ldap_enabled']             = false;
         $newConfig['auth']['google_oauth_enabled']     = false;
         $newConfig['auth']['microsoft_oauth_enabled']  = false;
+        $newConfig['auth']['registration_enabled'] = false;
+        $newConfig['auth']['registration_requires_approval'] = true;
+        $newConfig['auth']['users_can_edit_profile'] = false;
+        $newConfig['auth']['user_photos_enabled'] = false;
         $newConfig['google_oauth'] = [
             'client_id'       => '',
             'client_secret'   => '',

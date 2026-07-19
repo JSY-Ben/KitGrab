@@ -454,6 +454,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $auth['microsoft_oauth_enabled'] = isset($_POST['auth_microsoft_enabled']);
     $auth['registration_enabled'] = isset($_POST['auth_registration_enabled']);
     $auth['registration_requires_approval'] = isset($_POST['auth_registration_requires_approval']);
+    $auth['users_can_edit_profile'] = isset($_POST['auth_users_can_edit_profile']);
+    $auth['user_photos_enabled'] = isset($_POST['auth_user_photos_enabled']);
     $adminCnsRaw     = $post('admin_group_cn', '');
     $checkoutCnsRaw  = $post('checkout_group_cn', '');
     $adminGroupCns    = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $adminCnsRaw))));
@@ -1022,10 +1024,10 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
         <div class="top-bar mb-3">
             <div class="top-bar-user">
                 Logged in as:
-                <strong><?= h(trim(($currentUser['first_name'] ?? '') . ' ' . ($currentUser['last_name'] ?? ''))) ?></strong>
-                (<?= h($currentUser['email'] ?? '') ?>)
+                <?= layout_user_identity($currentUser, true) ?>
             </div>
-            <div class="top-bar-actions">
+            <div class="top-bar-actions d-flex align-items-center gap-2">
+                <?= layout_edit_profile_button($currentUser) ?>
                 <a href="logout.php" class="btn btn-link btn-sm">Log out</a>
             </div>
         </div>
@@ -1383,6 +1385,22 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                 </label>
                             </div>
                             <div class="form-text">Newly registered users cannot sign in until an administrator approves them from the Users page.</div>
+                        </div>
+
+                        <div class="border rounded p-3 mt-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="auth_users_can_edit_profile" id="auth_users_can_edit_profile" <?= $cfg(['auth', 'users_can_edit_profile'], false) ? 'checked' : '' ?>>
+                                <label class="form-check-label fw-semibold" for="auth_users_can_edit_profile">Allow users to edit their profile</label>
+                            </div>
+                            <div class="form-text">Local users can update their name, email address, username, and password from their profile page.</div>
+                        </div>
+
+                        <div class="border rounded p-3 mt-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="auth_user_photos_enabled" id="auth_user_photos_enabled" <?= $cfg(['auth', 'user_photos_enabled'], false) ? 'checked' : '' ?>>
+                                <label class="form-check-label fw-semibold" for="auth_user_photos_enabled">Allow user photos</label>
+                            </div>
+                            <div class="form-text">Users can upload a profile photo during registration or while editing their profile. Photos are shown beside user identities throughout the app.</div>
                         </div>
                     </div>
                 </div>

@@ -440,10 +440,10 @@ $migrations = [
     ],
     [
         'version' => '1.2.2',
-        'label' => 'Add user registration and approval support',
+        'label' => 'Add user registration, approval, and profile support',
         'is_applied' => static function (PDO $pdo, array $appliedVersions): bool {
             try {
-                $pdo->query('SELECT is_approved FROM users LIMIT 1');
+                $pdo->query('SELECT is_approved, profile_photo_url FROM users LIMIT 1');
                 return isset($appliedVersions['1.2.2']);
             } catch (Throwable $e) {
                 return false;
@@ -453,6 +453,10 @@ $migrations = [
             $column = $pdo->query("SHOW COLUMNS FROM users LIKE 'is_approved'")->fetch(PDO::FETCH_ASSOC);
             if (!$column) {
                 $pdo->exec('ALTER TABLE users ADD COLUMN is_approved TINYINT(1) NOT NULL DEFAULT 1 AFTER auth_source');
+            }
+            $photoColumn = $pdo->query("SHOW COLUMNS FROM users LIKE 'profile_photo_url'")->fetch(PDO::FETCH_ASSOC);
+            if (!$photoColumn) {
+                $pdo->exec('ALTER TABLE users ADD COLUMN profile_photo_url VARCHAR(1024) DEFAULT NULL AFTER is_approved');
             }
         },
     ],

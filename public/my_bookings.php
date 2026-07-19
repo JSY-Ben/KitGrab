@@ -140,10 +140,10 @@ if (!empty($_GET['deleted'])) {
         <div class="top-bar mb-3">
             <div class="top-bar-user">
                 Logged in as:
-                <strong><?= h($userName) ?></strong>
-                (<?= h($currentUser['email'] ?? '') ?>)
+                <?= layout_user_identity($currentUser, true) ?>
             </div>
-            <div class="top-bar-actions">
+            <div class="top-bar-actions d-flex align-items-center gap-2">
+                <?= layout_edit_profile_button($currentUser) ?>
                 <a href="logout.php" class="btn btn-link btn-sm">Log out</a>
             </div>
         </div>

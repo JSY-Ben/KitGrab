@@ -1388,10 +1388,10 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
             <?php if ($isAuthenticated): ?>
                 <div class="top-bar-user">
                     Logged in as:
-                    <strong><?= htmlspecialchars(trim((string)$currentUser['first_name'] . ' ' . (string)$currentUser['last_name'])) ?></strong>
-                    (<?= htmlspecialchars((string)$currentUser['email']) ?>)
+                    <?= layout_user_identity($currentUser, true) ?>
                 </div>
                 <div class="top-bar-actions d-flex gap-2">
+                    <?= layout_edit_profile_button($currentUser) ?>
                     <a href="basket.php"
                        class="btn btn-lg btn-primary fw-semibold shadow-sm px-4"
                        style="font-size:16px;"

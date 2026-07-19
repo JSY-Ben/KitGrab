@@ -252,6 +252,8 @@ if ($provider === 'local') {
         'first_name'   => $firstName,
         'last_name'    => $lastName,
         'display_name' => $displayName,
+        'profile_photo_url' => $user['profile_photo_url'] ?? '',
+        'auth_source'  => $user['auth_source'] ?? 'local',
         'is_admin'     => $isAdmin,
         'is_staff'     => $isStaff,
     ];
@@ -845,6 +847,7 @@ $_SESSION['user'] = [
     'first_name'   => $firstName,
     'last_name'    => $lastName,
     'display_name' => $fullName,
+    'auth_source'  => 'ldap',
     'is_admin'     => $isAdmin,
     'is_staff'     => $isStaff,
 ];

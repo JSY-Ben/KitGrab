@@ -151,13 +151,13 @@ if (!function_exists('layout_known_database_upgrades')) {
             ],
             [
                 'version' => '1.2.2',
-                'description' => 'Add user registration and approval support.',
+                'description' => 'Add user registration, approval, and profile support.',
                 'is_applied' => static function (PDO $pdo): bool {
                     try {
                         $stmt = $pdo->prepare('SELECT 1 FROM schema_version WHERE version = :version LIMIT 1');
                         $stmt->execute([':version' => '1.2.2']);
                         $versionApplied = (bool)$stmt->fetchColumn();
-                        $pdo->query('SELECT is_approved FROM users LIMIT 1');
+                        $pdo->query('SELECT is_approved, profile_photo_url FROM users LIMIT 1');
                         return $versionApplied;
                     } catch (Throwable $e) {
                         return false;
@@ -321,6 +321,76 @@ if (!function_exists('layout_render_admin_tabs')) {
         $html .= '</ul>';
 
         return $html;
+    }
+}
+
+if (!function_exists('layout_user_avatar')) {
+    function layout_user_avatar(array $user, ?array $cfg = null): string
+    {
+        $config = $cfg ?? layout_cached_config();
+        $name = trim((string)($user['first_name'] ?? '') . ' ' . (string)($user['last_name'] ?? ''));
+        $email = trim((string)($user['email'] ?? ''));
+        if ($name === '') $name = $email !== '' ? $email : 'User';
+        if (empty($config['auth']['user_photos_enabled'])) return '';
+        $photo = trim((string)($user['profile_photo_url'] ?? ''));
+        if ($photo !== '') {
+            return '<img class="user-avatar" src="' . layout_html_escape($photo) . '" alt="">';
+        }
+        $parts = preg_split('/\s+/', $name) ?: [];
+        $initials = '';
+        foreach (array_slice($parts, 0, 2) as $part) $initials .= strtoupper(substr($part, 0, 1));
+        return '<span class="user-avatar user-avatar--initials" aria-hidden="true">' . layout_html_escape($initials ?: 'U') . '</span>';
+    }
+}
+
+if (!function_exists('layout_user_identity')) {
+    function layout_user_identity(array $user, bool $showEmail = false, ?array $cfg = null): string
+    {
+        $name = trim((string)($user['first_name'] ?? '') . ' ' . (string)($user['last_name'] ?? ''));
+        $email = trim((string)($user['email'] ?? ''));
+        if ($name === '') $name = $email !== '' ? $email : 'User';
+        $text = '<span class="user-identity__text"><strong>' . layout_html_escape($name) . '</strong>';
+        if ($showEmail && $email !== '' && strcasecmp($name, $email) !== 0) {
+            $text .= '<span class="user-identity__email">' . layout_html_escape($email) . '</span>';
+        }
+        return '<span class="user-identity">' . layout_user_avatar($user, $cfg) . $text . '</span></span>';
+    }
+}
+
+if (!function_exists('layout_edit_profile_button')) {
+    function layout_edit_profile_button(array $user, ?array $cfg = null): string
+    {
+        $config = $cfg ?? layout_cached_config();
+        $isLocal = strtolower(trim((string)($user['auth_source'] ?? 'local'))) === 'local';
+        if (empty($config['auth']['users_can_edit_profile']) || !$isLocal) return '';
+        return '<a href="profile.php" class="btn btn-outline-primary btn-sm">Edit User Profile</a>';
+    }
+}
+
+if (!function_exists('layout_user_identity_by_email')) {
+    function layout_user_identity_by_email(string $name, string $email, bool $showEmail = false, ?array $cfg = null): string
+    {
+        static $cache = [];
+        $key = strtolower(trim($email));
+        $user = null;
+        if ($key !== '') {
+            if (!array_key_exists($key, $cache)) {
+                try {
+                    require_once SRC_PATH . '/db.php';
+                    global $pdo;
+                    $stmt = $pdo->prepare('SELECT first_name, last_name, email, profile_photo_url FROM users WHERE LOWER(email) = :email LIMIT 1');
+                    $stmt->execute([':email' => $key]);
+                    $cache[$key] = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+                } catch (Throwable $e) {
+                    $cache[$key] = null;
+                }
+            }
+            $user = $cache[$key];
+        }
+        if (!is_array($user)) {
+            $user = ['first_name' => trim($name), 'last_name' => '', 'email' => trim($email), 'profile_photo_url' => ''];
+        }
+        return layout_user_identity($user, $showEmail, $cfg);
     }
 }
 

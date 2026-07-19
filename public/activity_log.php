@@ -28,6 +28,7 @@ $eventLabels = [
     'user_logout' => 'User Logout',
     'user_registered' => 'User Registered',
     'user_approved' => 'User Approved',
+    'user_profile_updated' => 'User Profile Updated',
     'reservation_submitted' => 'Reservation Submitted',
     'reservation_updated' => 'Reservation Updated',
     'reservation_deleted' => 'Reservation Deleted',
@@ -337,10 +338,10 @@ try {
         <div class="top-bar mb-3">
             <div class="top-bar-user">
                 Logged in as:
-                <strong><?= h(trim(($currentUser['first_name'] ?? '') . ' ' . ($currentUser['last_name'] ?? ''))) ?></strong>
-                (<?= h($currentUser['email'] ?? '') ?>)
+                <?= layout_user_identity($currentUser, true) ?>
             </div>
-            <div class="top-bar-actions">
+            <div class="top-bar-actions d-flex align-items-center gap-2">
+                <?= layout_edit_profile_button($currentUser) ?>
                 <a href="logout.php" class="btn btn-link btn-sm">Log out</a>
             </div>
         </div>
