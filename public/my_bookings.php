@@ -28,7 +28,8 @@ $fromRaw = trim((string)($_GET['from'] ?? ''));
 $toRaw = trim((string)($_GET['to'] ?? ''));
 $page = max(1, (int)($_GET['page'] ?? 1));
 $perPageOptions = [10, 25, 50, 100];
-$perPage = in_array((int)($_GET['per_page'] ?? 10), $perPageOptions, true) ? (int)$_GET['per_page'] : 10;
+$perPageRaw = (int)($_GET['per_page'] ?? 10);
+$perPage = in_array($perPageRaw, $perPageOptions, true) ? $perPageRaw : 10;
 $sortOptions = [
     'start_desc' => 'start_datetime DESC', 'start_asc' => 'start_datetime ASC',
     'end_desc' => 'end_datetime DESC', 'end_asc' => 'end_datetime ASC',
