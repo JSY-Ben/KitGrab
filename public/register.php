@@ -142,7 +142,7 @@ if ($registrationEnabled && $_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php elseif ($registered): ?>
             <div class="alert alert-success">
                 <?= $requiresApproval
-                    ? 'Your account has been created and is waiting for administrator approval.'
+                    ? 'Your account has been created and is waiting for administrator approval. You will recieve an email once your account has been approved.'
                     : 'Your account has been created. You can now sign in.' ?>
             </div>
             <a href="login.php" class="btn btn-primary w-100">Back to sign in</a>
