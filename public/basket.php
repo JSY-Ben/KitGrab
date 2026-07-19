@@ -357,26 +357,19 @@ if (!empty($basket)) {
                 </div>
                 <form method="get" action="basket.php" id="basket-window-form">
                     <div class="row g-3">
-                        <div class="col-md-5">
+                        <div class="col-md-6">
                             <label class="form-label fw-semibold">Start date &amp; time</label>
                             <input type="datetime-local" name="start_datetime"
                                    id="basket_start_datetime"
                                    class="form-control form-control-lg"
                                    value="<?= htmlspecialchars($previewStartRaw) ?>">
                         </div>
-                        <div class="col-md-5">
+                        <div class="col-md-6">
                             <label class="form-label fw-semibold">End date &amp; time</label>
                             <input type="datetime-local" name="end_datetime"
                                    id="basket_end_datetime"
                                    class="form-control form-control-lg"
                                    value="<?= htmlspecialchars($previewEndRaw) ?>">
-                        </div>
-                        <div class="col-md-2 d-grid align-items-end">
-                            <button class="btn btn-primary btn-lg w-100 flex-md-fill mt-3 mt-md-0 reservation-window-btn"
-                                    type="button"
-                                    id="basket-today-btn">
-                                Today
-                            </button>
                         </div>
                     </div>
                 </form>
@@ -389,10 +382,15 @@ if (!empty($basket)) {
                 <input type="hidden" name="end_datetime"
                        value="<?= htmlspecialchars($previewEndRaw) ?>">
 
-                <div class="mb-3">
-                    <label for="reservation_note" class="form-label fw-semibold">Reservation note <span class="text-muted fw-normal">(optional)</span></label>
-                    <textarea id="reservation_note" name="reservation_note" class="form-control" rows="3" maxlength="4000"
-                              placeholder="Anything staff should know when preparing this booking?"></textarea>
+                <div class="availability-box mb-4">
+                    <div class="d-flex align-items-center mb-3 flex-wrap gap-2">
+                        <div class="availability-pill">Reservation notes</div>
+                        <div class="text-muted small">Optional information for the checkout team</div>
+                    </div>
+                    <label for="reservation_note" class="form-label fw-semibold">Notes for this reservation</label>
+                    <textarea id="reservation_note" name="reservation_note" class="form-control form-control-lg" rows="3" maxlength="5000"
+                              placeholder="Add any information the checkout team should know about this reservation"></textarea>
+                    <div class="form-text">These notes will be visible with the reservation and to staff during checkout.</div>
                 </div>
 
                 <p class="mb-2 text-muted">
@@ -427,7 +425,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const windowForm = document.getElementById('basket-window-form');
     const startInput = document.getElementById('basket_start_datetime');
     const endInput = document.getElementById('basket_end_datetime');
-    const todayBtn = document.getElementById('basket-today-btn');
     const windowScrollRestoreKey = 'kitgrab:basketWindowScrollY';
     let windowSubmitInFlight = false;
     let lastSubmittedWindow = (startInput && endInput)
@@ -586,17 +583,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }, 120);
     }
 
-    function setTodayWindow() {
-        if (!startInput || !endInput) return;
-        const now = new Date();
-        const tomorrow = new Date(now);
-        tomorrow.setDate(now.getDate() + 1);
-        tomorrow.setHours(9, 0, 0, 0);
-        setDatetimeInputValue(startInput, toLocalDatetimeValue(now));
-        setDatetimeInputValue(endInput, toLocalDatetimeValue(tomorrow));
-        maybeSubmitWindow();
-    }
-
     function bindFlatpickrApplySubmit(input) {
         if (!input || !input._flatpickr || !input._flatpickr.calendarContainer) return;
         const confirmButton = input._flatpickr.calendarContainer.querySelector('.flatpickr-confirm');
@@ -641,8 +627,5 @@ document.addEventListener('DOMContentLoaded', function () {
         bindPickerCentering(endInput);
     }
 
-    if (todayBtn) {
-        todayBtn.addEventListener('click', setTodayWindow);
-    }
 });
 </script>
