@@ -136,6 +136,9 @@ return [
         'notification_new_user_send_admins' => true,
         'notification_new_user_extra_emails' => '',
         'notification_new_user_template_html' => '<p>A new user account has been created.</p><p><strong>Name:</strong> {{person_name}}<br><strong>Email:</strong> {{person_email}}<br><strong>Username:</strong> {{username}}<br><strong>Approval status:</strong> {{approval_status}}</p>',
+        'notification_welcome_approved_template_html' => '<p>Hello {{person_name}},</p><p>Welcome to {{app_name}}. Your account is ready and you can sign in now.</p><p>{{login_link}}</p>',
+        'notification_welcome_pending_template_html' => '<p>Hello {{person_name}},</p><p>Welcome to {{app_name}}. Your account has been created and is awaiting administrator approval. We will email you when it is ready.</p>',
+        'notification_user_approved_template_html' => '<p>Hello {{person_name}},</p><p>Your {{app_name}} account has been approved. You can now sign in.</p><p>{{login_link}}</p>',
         'block_catalogue_overdue' => true, // block catalogue for users with overdue checkouts
         'catalogue_cache_ttl' => 0, // in seconds; set 0 to disable
         // Reservation controls

@@ -337,12 +337,28 @@ function layout_notification_template_editor(string $templateKey, array $config)
             'trigger' => 'A local account is created through public registration or by an administrator.',
             'audience' => 'Enabled administrator and additional recipients.',
         ],
+        'welcome_user_approved' => [
+            'title' => 'Welcome email — account ready',
+            'trigger' => 'A user registers while administrator approval is not required.',
+            'audience' => 'The newly registered user.',
+        ],
+        'welcome_user_pending' => [
+            'title' => 'Welcome email — awaiting approval',
+            'trigger' => 'A user registers while administrator approval is required.',
+            'audience' => 'The newly registered user.',
+        ],
+        'user_account_approved' => [
+            'title' => 'Account approved',
+            'trigger' => 'An administrator approves a pending user account.',
+            'audience' => 'The approved user.',
+        ],
     ][$templateKey];
     $wildcards = [
         'Person name' => '{{person_name}}',
         'Person email' => '{{person_email}}',
         'Username' => '{{username}}',
         'Approval status' => '{{approval_status}}',
+        'Login link' => '{{login_link}}',
         'Equipment' => '{{equipment_list}}',
         'Start date' => '{{start_date}}',
         'Return date' => '{{return_date}}',
@@ -1573,7 +1589,14 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                         <h5 class="card-title mb-1">Notifications</h5>
                         <p class="text-muted small mb-3">Control outbound emails for operational events and add extra recipients.</p>
 
-                        <div class="border rounded p-3 mb-3">
+                        <div class="nav nav-pills notification-group-tabs mb-3" role="tablist" aria-label="Notification categories">
+                            <button type="button" class="nav-link active" data-notification-tab="users">User accounts</button>
+                            <button type="button" class="nav-link" data-notification-tab="reservations">Reservations</button>
+                            <button type="button" class="nav-link" data-notification-tab="equipment">Equipment activity</button>
+                            <button type="button" class="nav-link" data-notification-tab="scheduled">Scheduled alerts</button>
+                        </div>
+
+                        <div class="border rounded p-3 mb-3 d-none" data-notification-group="scheduled">
                             <h6 class="mb-2">Overdue Equipment Report Recipients</h6>
                             <p class="text-muted small mb-3">Used by `scripts/email_overdue_staff.php` cron script to email a report of who is currently overdue on returning resources.</p>
                             <div class="row g-3">
@@ -1592,7 +1615,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                             <?php layout_notification_template_editor('overdue_staff', $config); ?>
                         </div>
 
-                        <div class="border rounded p-3 mb-3">
+                        <div class="border rounded p-3 mb-3" data-notification-group="users">
                             <h6 class="mb-2">New user created notifications</h6>
                             <p class="text-muted small mb-3">Sent when a local account is created through registration or by an administrator.</p>
                             <div class="row g-3">
@@ -1616,7 +1639,15 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                             <?php layout_notification_template_editor('new_user_registered', $config); ?>
                         </div>
 
-                        <div class="border rounded p-3 mb-3">
+                        <div class="border rounded p-3 mb-3" data-notification-group="users">
+                            <h6 class="mb-2">User welcome and approval emails</h6>
+                            <p class="text-muted small mb-3">These messages are sent directly to users as their account moves through registration and approval.</p>
+                            <?php layout_notification_template_editor('welcome_user_approved', $config); ?>
+                            <?php layout_notification_template_editor('welcome_user_pending', $config); ?>
+                            <?php layout_notification_template_editor('user_account_approved', $config); ?>
+                        </div>
+
+                        <div class="border rounded p-3 mb-3 d-none" data-notification-group="reservations">
                             <h6 class="mb-2">New reservation submitted notifications</h6>
                             <?php
                             $legacyReservationSubmittedSendStaff = $cfg(['app', 'notification_reservation_submitted_send_staff'], true);
@@ -1661,7 +1692,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                             <?php layout_notification_template_editor('reservation_submitted', $config); ?>
                         </div>
 
-                        <div class="border rounded p-3 mb-3">
+                        <div class="border rounded p-3 mb-3 d-none" data-notification-group="equipment">
                             <h6 class="mb-2">Quick checkout notifications</h6>
                             <div class="row g-3">
                                 <div class="col-md-4">
@@ -1688,7 +1719,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                             <?php layout_notification_template_editor('quick_checkout', $config); ?>
                         </div>
 
-                        <div class="border rounded p-3 mb-3">
+                        <div class="border rounded p-3 mb-3 d-none" data-notification-group="equipment">
                             <h6 class="mb-2">Reservation checkout notifications (Staff Checkout page)</h6>
                             <div class="row g-3">
                                 <div class="col-md-4">
@@ -1715,7 +1746,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                             <?php layout_notification_template_editor('staff_checkout', $config); ?>
                         </div>
 
-                        <div class="border rounded p-3 mb-3">
+                        <div class="border rounded p-3 mb-3 d-none" data-notification-group="equipment">
                             <h6 class="mb-2">Quick check-in notifications</h6>
                             <div class="row g-3">
                                 <div class="col-md-4">
@@ -1742,7 +1773,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                             <?php layout_notification_template_editor('quick_checkin', $config); ?>
                         </div>
 
-                        <div class="border rounded p-3">
+                        <div class="border rounded p-3 d-none" data-notification-group="scheduled">
                             <h6 class="mb-2">Missed Reservation Notifications</h6>
                             <p class="text-muted small mb-3">Used by `scripts/cron_mark_missed.php` cron script when a reservation is marked as missed.</p>
                             <div class="row g-3">
@@ -2507,6 +2538,25 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
 
     const initialTab = settingsTabInput ? settingsTabInput.value : 'frontend';
     applySettingsTab(initialTab);
+
+    const notificationTabs = Array.from(form.querySelectorAll('[data-notification-tab]'));
+    const notificationGroups = Array.from(form.querySelectorAll('[data-notification-group]'));
+    const applyNotificationTab = (groupName) => {
+        notificationGroups.forEach((group) => {
+            group.classList.toggle('d-none', group.getAttribute('data-notification-group') !== groupName);
+        });
+        notificationTabs.forEach((tabButton) => {
+            const active = tabButton.getAttribute('data-notification-tab') === groupName;
+            tabButton.classList.toggle('active', active);
+            tabButton.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+    };
+    notificationTabs.forEach((tabButton) => {
+        tabButton.addEventListener('click', () => {
+            applyNotificationTab(tabButton.getAttribute('data-notification-tab') || 'users');
+        });
+    });
+    if (notificationTabs.length) applyNotificationTab('users');
 
     const permissionsGroupSelect = form.querySelector('[data-permissions-group-select]');
     if (permissionsGroupSelect) {

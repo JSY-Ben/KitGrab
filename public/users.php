@@ -225,6 +225,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'username' => $usernameValue ?? '',
                         'is_approved' => 1,
                     ]);
+                    layout_notify_registered_user([
+                        'first_name' => $firstNameValue,
+                        'last_name' => $lastNameValue,
+                        'email' => $email,
+                        'username' => $usernameValue ?? '',
+                    ], true);
                     $messages[] = 'User created.';
                 }
             } catch (Throwable $e) {
@@ -251,7 +257,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'Your account has been approved. You can now sign in.',
                         $loginUrl !== '' ? 'Sign in: ' . $loginUrl : null,
                     ];
-                    $sent = layout_send_notification((string)$approvedUser['email'], $approvedName, 'Your account has been approved', $lines);
+                    $sent = layout_send_notification(
+                        (string)$approvedUser['email'],
+                        $approvedName,
+                        'Your account has been approved',
+                        $lines,
+                        null,
+                        true,
+                        'user_account_approved',
+                        [
+                            'person_name' => $approvedName,
+                            'person_email' => (string)$approvedUser['email'],
+                            'approval_status' => 'Approved',
+                            'login_link' => $loginUrl,
+                        ]
+                    );
                     $messages[] = $sent ? 'User approved and notified by email.' : 'User approved, but the notification email could not be sent.';
                 } else {
                     $messages[] = 'User was already approved.';

@@ -6,6 +6,8 @@
 - Added configurable administrator approval for newly registered accounts.
 - Added pending-account visibility and approval controls to the Users page.
 - Added approval emails and configurable administrator notifications when user accounts are created.
+- Added customisable welcome, pending-approval, and account-approved user email templates.
+- Grouped notification settings into separate user, reservation, equipment, and scheduled-alert sections.
 
 Run the browser upgrade after installing this release to add account approval status storage.
 

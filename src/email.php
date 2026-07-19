@@ -250,6 +250,21 @@ function layout_notification_template_definitions(): array
             'config_key' => 'notification_new_user_template_html',
             'default' => '<p>A new user account has been created.</p><p><strong>Name:</strong> {{person_name}}<br><strong>Email:</strong> {{person_email}}<br><strong>Username:</strong> {{username}}<br><strong>Approval status:</strong> {{approval_status}}</p>',
         ],
+        'welcome_user_approved' => [
+            'label' => 'Welcome email for immediately approved users',
+            'config_key' => 'notification_welcome_approved_template_html',
+            'default' => '<p>Hello {{person_name}},</p><p>Welcome to {{app_name}}. Your account is ready and you can sign in now.</p><p>{{login_link}}</p>',
+        ],
+        'welcome_user_pending' => [
+            'label' => 'Welcome email for users awaiting approval',
+            'config_key' => 'notification_welcome_pending_template_html',
+            'default' => '<p>Hello {{person_name}},</p><p>Welcome to {{app_name}}. Your account has been created and is awaiting administrator approval. We will email you when it is ready.</p>',
+        ],
+        'user_account_approved' => [
+            'label' => 'User account approved email',
+            'config_key' => 'notification_user_approved_template_html',
+            'default' => '<p>Hello {{person_name}},</p><p>Your {{app_name}} account has been approved. You can now sign in.</p><p>{{login_link}}</p>',
+        ],
     ];
 }
 
@@ -1022,6 +1037,39 @@ function layout_notify_new_user_created(array $user, ?array $cfg = null): void
     foreach (layout_extra_notification_recipients((string)($appCfg['notification_new_user_extra_emails'] ?? ''), $notified) as $recipient) {
         layout_send_notification($recipient['email'], $recipient['name'], 'New user account created', $lines, $config, true, 'new_user_registered', $variables);
     }
+}
+
+function layout_notify_registered_user(array $user, bool $isApproved, ?array $cfg = null): bool
+{
+    $config = $cfg ?? load_config();
+    $email = trim((string)($user['email'] ?? ''));
+    if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+        return false;
+    }
+    $name = trim((string)($user['first_name'] ?? '') . ' ' . (string)($user['last_name'] ?? ''));
+    $name = $name !== '' ? $name : $email;
+    $loginUrl = layout_app_page_url('login.php', $config);
+    $variables = [
+        'person_name' => $name,
+        'person_email' => $email,
+        'username' => (string)($user['username'] ?? ''),
+        'approval_status' => $isApproved ? 'Approved' : 'Pending administrator approval',
+        'login_link' => $loginUrl,
+    ];
+    $lines = $isApproved
+        ? ['Hello ' . $name . ',', 'Welcome. Your account is ready and you can sign in now.', $loginUrl !== '' ? 'Sign in: ' . $loginUrl : null]
+        : ['Hello ' . $name . ',', 'Welcome. Your account has been created and is awaiting administrator approval. We will email you when it is ready.'];
+
+    return layout_send_notification(
+        $email,
+        $name,
+        $isApproved ? 'Welcome – your account is ready' : 'Welcome – your account is awaiting approval',
+        $lines,
+        $config,
+        true,
+        $isApproved ? 'welcome_user_approved' : 'welcome_user_pending',
+        $variables
+    );
 }
 
 function encode_header(string $str): string

@@ -80,6 +80,12 @@ if ($registrationEnabled && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 'username' => $username,
                 'is_approved' => $requiresApproval ? 0 : 1,
             ], $config);
+            layout_notify_registered_user([
+                'first_name' => $firstName,
+                'last_name' => $lastName,
+                'email' => $email,
+                'username' => $username,
+            ], !$requiresApproval, $config);
             $registered = true;
             unset($_SESSION['registration_csrf']);
         } catch (Throwable $e) {
