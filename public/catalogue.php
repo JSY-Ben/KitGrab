@@ -1393,9 +1393,10 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                 <div class="top-bar-actions d-flex gap-2">
                     <?= layout_edit_profile_button($currentUser) ?>
                     <a href="logout.php" class="btn btn-link btn-sm">Log out</a>
+                </div>
+                <div class="top-bar-primary-action">
                     <a href="basket.php"
-                       class="btn btn-lg btn-primary fw-semibold shadow-sm px-4"
-                       style="font-size:16px;"
+                       class="btn btn-lg btn-primary fw-bold shadow px-4 py-2"
                        id="view-basket-btn">
                         View basket<?= $basketCount > 0 ? ' (' . $basketCount . ')' : '' ?>
                     </a>

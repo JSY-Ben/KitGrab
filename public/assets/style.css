@@ -446,6 +446,17 @@ input[type="checkbox"] {
     gap: 0.5rem;
 }
 
+.top-bar-primary-action {
+    margin-left: auto;
+    padding-left: 1rem;
+    border-left: 1px solid rgba(var(--primary-rgb), 0.18);
+}
+
+.top-bar-primary-action .btn-primary {
+    min-width: 150px;
+    box-shadow: 0 9px 22px rgba(var(--primary-rgb), 0.28) !important;
+}
+
 /* --------------------------------------------------
    Tables / badges
 -------------------------------------------------- */
@@ -2116,6 +2127,19 @@ form .form-select {
         justify-content: flex-start;
         flex-wrap: wrap;
         gap: 0.5rem;
+    }
+
+    .top-bar-primary-action {
+        width: 100%;
+        margin-left: 0;
+        padding-top: 0.65rem;
+        padding-left: 0;
+        border-top: 1px solid rgba(var(--primary-rgb), 0.18);
+        border-left: 0;
+    }
+
+    .top-bar-primary-action .btn {
+        width: 100%;
     }
 
     .app-nav {
