@@ -538,6 +538,9 @@ if (!function_exists('layout_footer')) {
         $versionEsc  = htmlspecialchars($version, ENT_QUOTES, 'UTF-8');
         $flatpickrCfg = app_flatpickr_settings(layout_cached_config());
         $flatpickrCfgJson = json_encode($flatpickrCfg, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
+        $todayLabelJson = json_encode('Today', JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?: '"Today"';
+        $dateLabelJson = json_encode('Date', JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?: '"Date"';
+        $timeLabelJson = json_encode('Time', JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?: '"Time"';
 
         echo '<div id="app-busy-overlay" class="app-busy-overlay" aria-hidden="true"><div class="app-busy-card"><div class="spinner-border" aria-hidden="true"></div><strong>Please wait…</strong></div></div>';
         echo '<script src="assets/nav.js"></script>';
@@ -668,6 +671,48 @@ if (!function_exists('layout_footer')) {
             });
         };
 
+        const addTodayAction = (input, picker, pickerType) => {
+            if (!picker || !picker.calendarContainer || pickerType === 'time') return;
+            const calendar = picker.calendarContainer;
+            if (calendar.querySelector('.flatpickr-today-action')) return;
+            const button = document.createElement('button');
+            button.type = 'button'; button.className = 'flatpickr-today-action'; button.textContent = {$todayLabelJson};
+            button.addEventListener('click', (event) => {
+                event.preventDefault(); event.stopPropagation();
+                const today = new Date();
+                if (pickerType === 'date') today.setHours(0, 0, 0, 0);
+                picker.setDate(today, true, picker.config.dateFormat);
+                if (pickerType === 'date') picker.close();
+            });
+            const weekdays = calendar.querySelector('.flatpickr-weekdays');
+            const days = calendar.querySelector('.flatpickr-days');
+            if (weekdays && weekdays.parentNode) weekdays.parentNode.insertBefore(button, weekdays);
+            else if (days && days.parentNode) days.parentNode.insertBefore(button, days);
+            else calendar.appendChild(button);
+        };
+
+        const emphasizeDateSelection = (picker, pickerType) => {
+            if (!picker || !picker.calendarContainer || pickerType === 'time') return;
+            const calendar = picker.calendarContainer;
+            if (calendar.querySelector('.flatpickr-date-heading')) return;
+            const months = calendar.querySelector('.flatpickr-months');
+            const heading = document.createElement('div');
+            heading.className = 'flatpickr-date-heading'; heading.textContent = {$dateLabelJson};
+            calendar.classList.add('flatpickr-has-date-heading');
+            if (months && months.parentNode) months.parentNode.insertBefore(heading, months);
+            else calendar.insertBefore(heading, calendar.firstChild);
+        };
+
+        const emphasizeTimeSelection = (picker, pickerType) => {
+            if (!picker || !picker.calendarContainer || !picker.timeContainer || pickerType === 'date') return;
+            const calendar = picker.calendarContainer;
+            calendar.classList.add('flatpickr-has-prominent-time');
+            if (calendar.querySelector('.flatpickr-time-heading')) return;
+            const heading = document.createElement('div');
+            heading.className = 'flatpickr-time-heading'; heading.textContent = {$timeLabelJson};
+            calendar.insertBefore(heading, picker.timeContainer);
+        };
+
         const initInput = (input) => {
             if (!(input instanceof HTMLInputElement)) return;
             if (input.dataset.flatpickrBound === '1') return;
@@ -695,13 +740,6 @@ if (!function_exists('layout_footer')) {
                 altInputClass: (input.className ? input.className + ' ' : '') + 'flatpickr-alt-input',
                 parseDate: parseDateFactory(fallbackFormats[pickerType] || []),
                 onOpen: [centerOpenCalendar],
-                onReady: [(_dates, _value, instance) => {
-                    if (!instance || !instance.calendarContainer || instance.calendarContainer.querySelector('.flatpickr-today-action')) return;
-                    const button = document.createElement('button');
-                    button.type = 'button'; button.className = 'flatpickr-today-action'; button.textContent = 'Today';
-                    button.addEventListener('click', () => { instance.setDate(new Date(), true); });
-                    instance.calendarContainer.appendChild(button);
-                }],
             };
             if ((pickerType === 'time' || pickerType === 'datetime') && typeof window.confirmDatePlugin === 'function') {
                 baseOptions.plugins = [
@@ -737,6 +775,9 @@ if (!function_exists('layout_footer')) {
 
             try {
                 const picker = window.flatpickr(input, baseOptions);
+                emphasizeDateSelection(picker, pickerType);
+                emphasizeTimeSelection(picker, pickerType);
+                addTodayAction(input, picker, pickerType);
                 if (picker && picker.altInput) {
                     if (input.style && input.style.cssText) {
                         picker.altInput.style.cssText = input.style.cssText;

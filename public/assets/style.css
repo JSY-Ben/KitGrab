@@ -2039,4 +2039,37 @@ form .form-select {
 .app-busy-card { display: flex; align-items: center; gap: .85rem; padding: 1rem 1.25rem; border-radius: .75rem; background: var(--bs-body-bg); box-shadow: 0 1rem 3rem rgba(0,0,0,.25); }
 .flatpickr-calendar { border: 2px solid var(--bs-primary); box-shadow: 0 1rem 2.5rem rgba(0,0,0,.24); }
 .flatpickr-time { border-top: 2px solid var(--bs-border-color); }
-.flatpickr-today-action { width: calc(100% - 1rem); margin: .5rem; padding: .35rem; border: 0; border-radius: .4rem; color: #fff; background: var(--bs-primary); font-weight: 600; }
+.flatpickr-today-action {
+    width: calc(100% - 1rem); margin: .45rem .5rem; padding: .45rem .75rem;
+    border: 1px solid rgba(var(--primary-rgb), .35);
+    border-radius: .5rem; color: var(--primary-strong);
+    background: rgba(var(--primary-rgb), .08);
+    font-size: .85rem; font-weight: 700; text-align: center; cursor: pointer;
+}
+.flatpickr-today-action:hover, .flatpickr-today-action:focus-visible {
+    border-color: var(--primary); color: #fff; background: var(--primary); outline: none;
+}
+.flatpickr-calendar .flatpickr-date-heading,
+.flatpickr-calendar .flatpickr-time-heading {
+    padding: .55rem .75rem .15rem;
+    border-top: 2px solid rgba(var(--primary-rgb), .3);
+    background: rgba(var(--primary-rgb), .06);
+    color: var(--primary-strong);
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-align: center;
+    text-transform: uppercase;
+}
+.flatpickr-calendar .flatpickr-date-heading { padding-bottom: .45rem; border-top: 0; }
+.flatpickr-calendar.flatpickr-has-date-heading .flatpickr-months .flatpickr-prev-month,
+.flatpickr-calendar.flatpickr-has-date-heading .flatpickr-months .flatpickr-next-month { top: 31px; }
+.flatpickr-calendar.flatpickr-has-prominent-time .flatpickr-time {
+    height: 48px; max-height: 48px; border-top: 0;
+    background: rgba(var(--primary-rgb), .06);
+}
+.flatpickr-calendar.flatpickr-has-prominent-time .flatpickr-time input,
+.flatpickr-calendar.flatpickr-has-prominent-time .flatpickr-time .flatpickr-am-pm,
+.flatpickr-calendar.flatpickr-has-prominent-time .flatpickr-time .flatpickr-time-separator {
+    color: var(--primary-strong); font-size: 1.15rem; font-weight: 800;
+}
