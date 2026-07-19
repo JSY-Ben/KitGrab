@@ -380,21 +380,17 @@ if ($selectedUser) {
           href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="assets/style.css">
     <?= layout_theme_styles() ?>
-    <style>
-        .checkin-search {
-            font-size: 1.1rem;
-        }
-    </style>
 </head>
 <body class="p-4">
 <div class="container">
     <div class="page-shell">
         <?= layout_logo_tag() ?>
 <?php endif; ?>
-        <div class="page-header">
-            <h1>Check In Reservations</h1>
+        <div class="page-header checkin-page-header">
+            <div class="checkin-page-eyebrow">Asset returns</div>
+            <h1>Check in assets</h1>
             <div class="page-subtitle">
-                Search for a user with checked-out equipment and check items back in.
+                Find a borrower, review their equipment, and record returned assets.
             </div>
         </div>
 
@@ -409,24 +405,32 @@ if ($selectedUser) {
             <div class="alert alert-danger"><?= h($msg) ?></div>
         <?php endforeach; ?>
 
-        <div class="border rounded-3 p-4 mb-4">
+        <section class="checkin-panel checkin-panel--search mb-4" aria-labelledby="checkin-search-title">
+            <div class="checkin-panel__header">
+                <div>
+                    <div class="checkin-step">Step 1</div>
+                    <h2 id="checkin-search-title" class="checkin-panel__title">Choose a borrower</h2>
+                    <p class="checkin-panel__description">Search the people who currently have equipment checked out.</p>
+                </div>
+                <span class="checkin-count-badge"><?= (int)$userTotal ?> borrower<?= $userTotal === 1 ? '' : 's' ?></span>
+            </div>
             <form method="get" action="<?= h($pageAction) ?>" id="checkin-user-form">
                 <?php foreach ($baseQuery as $k => $v): ?>
                     <input type="hidden" name="<?= h($k) ?>" value="<?= h($v) ?>">
                 <?php endforeach; ?>
                 <div class="d-flex flex-column flex-md-row gap-3 align-items-md-end">
                     <div class="flex-grow-1">
-                        <label for="checkin_user_search" class="form-label fw-semibold">Search for Users with Checked Out Equipment</label>
+                        <label for="checkin_user_search" class="form-label fw-semibold">Search borrowers</label>
                         <input type="text"
                                name="user_q"
                                class="form-control form-control-lg checkin-search"
                                id="checkin_user_search"
-                               placeholder="Filter by name or email"
+                               placeholder="Enter a name or email address"
                                value="<?= h($userSearch) ?>"
                                <?= $userSearch !== '' ? 'autofocus' : '' ?>>
                     </div>
                     <div>
-                        <label class="form-label fw-semibold d-block">Per page</label>
+                        <label class="form-label fw-semibold d-block">Rows</label>
                         <select class="form-select form-select-lg" name="user_per_page" id="checkin-user-per-page">
                             <?php foreach ($userPerPageOptions as $option): ?>
                                 <option value="<?= $option ?>" <?= $userPerPage === $option ? 'selected' : '' ?>><?= $option ?></option>
@@ -435,15 +439,15 @@ if ($selectedUser) {
                     </div>
                 </div>
                 <div class="d-flex flex-column flex-md-row align-items-md-center gap-3 mt-2">
-                    <div class="form-text">Only users with checked-out equipment will appear.</div>
+                    <div class="form-text">Results update as you type. Only borrowers with checked-out assets are shown.</div>
                     <?php if ($selectedUserId > 0 || $selectedUserEmail !== '' || $selectedUserNameInput !== ''): ?>
                         <a href="<?= h($pageBase . (!empty($baseQuery) ? ('?' . http_build_query($baseQuery)) : '')) ?>" class="btn btn-link btn-sm">Clear selection</a>
                     <?php endif; ?>
                 </div>
             </form>
-        </div>
+        </section>
 
-        <div class="border rounded-3 p-3 mb-4">
+        <section class="checkin-panel checkin-panel--flush mb-4" aria-label="Borrowers with checked-out assets">
             <div class="table-responsive">
                 <table class="table align-middle mb-0">
                     <thead>
@@ -456,7 +460,12 @@ if ($selectedUser) {
                     <tbody>
                         <?php if (empty($userList)): ?>
                             <tr>
-                                <td colspan="3" class="text-muted">No checked-out users found.</td>
+                                <td colspan="3">
+                                    <div class="checkin-empty-state">
+                                        <div class="checkin-empty-state__title">No borrowers found</div>
+                                        <div class="text-muted small">Try a different name or email address.</div>
+                                    </div>
+                                </td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($userList as $userRow): ?>
@@ -487,7 +496,7 @@ if ($selectedUser) {
                                             <div class="text-muted small"><?= h($subLabel) ?></div>
                                         <?php endif; ?>
                                     </td>
-                                    <td><?= $count ?></td>
+                                    <td><span class="checkin-item-count"><?= $count ?> item<?= $count === 1 ? '' : 's' ?></span></td>
                                     <td class="text-end">
                                         <a class="btn btn-outline-primary btn-sm" href="<?= h($link) ?>">Check in</a>
                                     </td>
@@ -533,27 +542,29 @@ if ($selectedUser) {
                     </nav>
                 <?php endif; ?>
             </div>
-        </div>
+        </section>
 
         <?php if ($selectedUserId > 0 || $selectedUserEmail !== '' || $selectedUserNameInput !== ''): ?>
-            <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2 mb-3">
+            <div class="checkin-selection-summary mb-3">
                 <div>
-                    <div class="h5 mb-1">
+                    <div class="checkin-step">Step 2 · Review returns</div>
+                    <div class="h5 mb-1 mt-1">
                         <?= h($selectedName !== '' ? $selectedName : ($selectedEmail !== '' ? $selectedEmail : 'Selected user')) ?>
                     </div>
                     <?php if ($selectedEmail !== ''): ?>
                         <div class="text-muted small"><?= h($selectedEmail) ?></div>
                     <?php endif; ?>
                 </div>
-                <div class="text-muted">
-                    <?= $totalCheckedOut ?> item(s) checked out
+                <div class="checkin-selection-summary__count">
+                    <strong><?= $totalCheckedOut ?></strong>
+                    <span>checked out</span>
                 </div>
             </div>
 
             <?php if (empty($checkedOut)): ?>
                 <div class="alert alert-info">No checked-out items found for this user.</div>
             <?php else: ?>
-                <form method="post" action="<?= h($pageAction) ?>" class="border rounded-3 p-3" id="checkin-items-form">
+                <form method="post" action="<?= h($pageAction) ?>" class="checkin-panel checkin-panel--flush" id="checkin-items-form">
                     <?php foreach ($baseQuery as $k => $v): ?>
                         <input type="hidden" name="<?= h($k) ?>" value="<?= h($v) ?>">
                     <?php endforeach; ?>
@@ -561,14 +572,15 @@ if ($selectedUser) {
                     <input type="hidden" name="user_email" value="<?= h($selectedUserEmail) ?>">
                     <input type="hidden" name="user_name" value="<?= h($selectedUserNameInput) ?>">
 
-                <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2 mb-3">
+                <div class="checkin-action-bar">
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" id="checkin-select-all">
-                        <label class="form-check-label" for="checkin-select-all">Select all</label>
+                        <label class="form-check-label fw-semibold" for="checkin-select-all">Select all visible assets</label>
+                        <div class="checkin-selected-count" id="checkin-selected-count" aria-live="polite">0 selected</div>
                     </div>
                     <div class="d-flex flex-wrap gap-2">
-                        <button type="submit" class="btn btn-outline-primary btn-lg" name="mode" value="checkin_all">Check in all</button>
-                        <button type="submit" class="btn btn-primary btn-lg" name="mode" value="checkin">Check in selected</button>
+                        <button type="submit" class="btn btn-outline-primary" name="mode" value="checkin_all">Check in all <?= $totalCheckedOut ?></button>
+                        <button type="submit" class="btn btn-primary" name="mode" value="checkin" id="checkin-selected-button">Check in selected</button>
                     </div>
                 </div>
 
@@ -597,7 +609,7 @@ if ($selectedUser) {
                                     ?>
                                     <tr>
                                         <td>
-                                            <input class="form-check-input" type="checkbox" name="asset_ids[]" value="<?= $assetId ?>">
+                                            <input class="form-check-input checkin-asset-checkbox" type="checkbox" name="asset_ids[]" value="<?= $assetId ?>" aria-label="Select <?= h($assetTag !== '' ? $assetTag : ('asset ' . $assetId)) ?>">
                                         </td>
                                         <td class="fw-semibold"><?= h($assetTag !== '' ? $assetTag : ('Asset #' . $assetId)) ?></td>
                                         <td>
@@ -621,7 +633,8 @@ if ($selectedUser) {
                                             <input type="text"
                                                    name="asset_notes[<?= $assetId ?>]"
                                                    class="form-control"
-                                                   placeholder="Optional note">
+                                                   placeholder="Condition or return note (optional)"
+                                                   aria-label="Check-in note for <?= h($assetTag !== '' ? $assetTag : ('asset ' . $assetId)) ?>">
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -689,14 +702,28 @@ if ($selectedUser) {
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const selectAll = document.getElementById('checkin-select-all');
+    const assetBoxes = Array.from(document.querySelectorAll('.checkin-asset-checkbox'));
+    const selectedCount = document.getElementById('checkin-selected-count');
+    const selectedButton = document.getElementById('checkin-selected-button');
+    const updateSelection = () => {
+        const count = assetBoxes.filter((box) => box.checked).length;
+        if (selectedCount) selectedCount.textContent = count + ' selected';
+        if (selectedButton) selectedButton.textContent = count > 0 ? 'Check in selected (' + count + ')' : 'Check in selected';
+        if (selectAll) {
+            selectAll.checked = assetBoxes.length > 0 && count === assetBoxes.length;
+            selectAll.indeterminate = count > 0 && count < assetBoxes.length;
+        }
+    };
     if (selectAll) {
         selectAll.addEventListener('change', () => {
-            const boxes = document.querySelectorAll('input[name="asset_ids[]"]');
-            boxes.forEach((box) => {
+            assetBoxes.forEach((box) => {
                 box.checked = selectAll.checked;
             });
+            updateSelection();
         });
     }
+    assetBoxes.forEach((box) => box.addEventListener('change', updateSelection));
+    updateSelection();
 
     const perPageSelect = document.getElementById('checkin-per-page');
     if (perPageSelect) {
