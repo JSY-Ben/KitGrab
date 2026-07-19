@@ -79,6 +79,23 @@ function format_activity_metadata_value(array $metadata, array $labelMap, ?DateT
         }
 
         if (is_array($value)) {
+            $nestedLines = [];
+            foreach ($value as $item) {
+                if (is_array($item)) {
+                    array_push($nestedLines, ...format_activity_metadata_value($item, $labelMap, $tz));
+                }
+            }
+
+            $isAssociative = $value !== [] && array_keys($value) !== range(0, count($value) - 1);
+            if ($isAssociative && $nestedLines === []) {
+                $nestedLines = format_activity_metadata_value($value, $labelMap, $tz);
+            }
+
+            if ($nestedLines !== []) {
+                array_push($lines, ...$nestedLines);
+                continue;
+            }
+
             $value = implode(', ', array_map(static function ($item): string {
                 return is_scalar($item) ? (string)$item : json_encode($item, JSON_UNESCAPED_SLASHES);
             }, $value));
