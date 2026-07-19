@@ -175,10 +175,34 @@ if ($forceRefresh) {
     $cacheTtl = 0;
 }
 
-// Handle renew actions (all/overdue tabs)
+// Handle check-in and renew actions (all/overdue tabs)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['checkin_asset_id'])) {
+        $checkinId = (int)$_POST['checkin_asset_id'];
+        if ($checkinId > 0) {
+            try {
+                if (!checked_out_asset_visible($pdo, $checkinId, $currentUser, $restrictCheckedOutToSameGroup)) {
+                    throw new RuntimeException('You do not have access to that checked-out asset.');
+                }
+                $labels = load_asset_labels($pdo, [$checkinId]);
+                $label = $labels[$checkinId] ?? ('Asset #' . $checkinId);
+                checkin_asset($checkinId);
+                $messages[] = "Checked in {$label}.";
+                activity_log_event('asset_checked_in', 'Checked out asset checked in', [
+                    'subject_type' => 'asset',
+                    'subject_id' => $checkinId,
+                    'metadata' => ['assets' => [$label]],
+                ]);
+            } catch (Throwable $e) {
+                $error = 'Could not check in asset: ' . $e->getMessage();
+            }
+        } else {
+            $error = 'Select a valid asset to check in.';
+        }
+    }
+
     // Renew single
-    if (isset($_POST['renew_asset_id'])) {
+    elseif (isset($_POST['renew_asset_id'])) {
         $renewId = (int)$_POST['renew_asset_id'];
         $renewExpected = '';
         if (isset($_POST['renew_expected']) && is_array($_POST['renew_expected'])) {
@@ -211,7 +235,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Renew selected items
-    if (isset($_POST['bulk_renew']) && $_POST['bulk_renew'] === '1') {
+    elseif (isset($_POST['bulk_renew']) && $_POST['bulk_renew'] === '1') {
         $bulkExpected = normalize_expected_datetime($_POST['bulk_expected'] ?? '');
         $bulkIds = $_POST['bulk_asset_ids'] ?? [];
         if ($bulkExpected === '') {
@@ -611,13 +635,10 @@ function layout_checked_out_url(string $base, array $params): string
                                                class="form-control form-control-sm">
                                     </td>
                                     <td>
-                                        <button type="submit"
-                                                name="renew_asset_id"
-                                                value="<?= $aid ?>"
-                                                class="btn btn-sm btn-outline-primary"
-                                                <?php if ($aid <= 0): ?>disabled<?php endif; ?>>
-                                            Renew
-                                        </button>
+                                        <div class="d-flex flex-wrap gap-2">
+                                            <button type="submit" name="renew_asset_id" value="<?= $aid ?>" class="btn btn-sm btn-outline-primary" <?php if ($aid <= 0): ?>disabled<?php endif; ?>>Renew</button>
+                                            <button type="submit" name="checkin_asset_id" value="<?= $aid ?>" class="btn btn-sm btn-outline-success" onclick="return confirm('Check in this asset?');" <?php if ($aid <= 0): ?>disabled<?php endif; ?>>Check In</button>
+                                        </div>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
