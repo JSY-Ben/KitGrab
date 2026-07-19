@@ -1417,12 +1417,13 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
 
         <?php if ($isStaff): ?>
             <div class="alert alert-info d-flex flex-column flex-md-row align-items-md-center justify-content-md-between booking-for-alert">
-                <div class="mb-2 mb-md-0">
+                <div class="mb-2 mb-md-0 d-flex align-items-center gap-2">
                     <strong>Booking for:</strong>
-                    <?= h($activeUser['email'] ?? '') ?>
-                    <?php if (!empty($activeUser['first_name'])): ?>
-                        (<?= h(trim(($activeUser['first_name'] ?? '') . ' ' . ($activeUser['last_name'] ?? ''))) ?>)
-                    <?php endif; ?>
+                    <?= layout_user_identity_by_email(
+                        trim((string)($activeUser['first_name'] ?? '') . ' ' . (string)($activeUser['last_name'] ?? '')),
+                        (string)($activeUser['email'] ?? ''),
+                        true
+                    ) ?>
                 </div>
                 <form method="post" id="booking_user_form" class="d-flex gap-2 mb-0 flex-wrap position-relative" style="z-index: 9998;">
                     <input type="hidden" name="mode" value="set_booking_user">
