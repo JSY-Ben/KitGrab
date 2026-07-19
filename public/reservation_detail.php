@@ -22,6 +22,40 @@ function display_datetime(?string $isoDatetime): string
     return app_format_datetime($isoDatetime);
 }
 
+function reservation_detail_checkin_notes(PDO $pdo, string $assetCache): string
+{
+    $tags = [];
+    foreach (preg_split('/,(?![^()]*\))/', $assetCache) ?: [] as $part) {
+        $part = trim($part);
+        if ($part === '' || strcasecmp($part, 'Pending checkout') === 0) { continue; }
+        $open = strpos($part, ' (');
+        $tag = trim($open === false ? $part : substr($part, 0, $open));
+        if ($tag !== '') { $tags[$tag] = true; }
+    }
+    if (!$tags) { return ''; }
+    try {
+        $placeholders = implode(',', array_fill(0, count($tags), '?'));
+        $stmt = $pdo->prepare("SELECT a.asset_tag, n.note, n.actor_name, n.created_at
+            FROM assets a JOIN asset_notes n ON n.asset_id = a.id
+            WHERE n.note_type = 'checkin' AND a.asset_tag IN ({$placeholders})
+            ORDER BY a.asset_tag ASC, n.created_at DESC, n.id DESC");
+        $stmt->execute(array_keys($tags));
+        $latest = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $tag = (string)($row['asset_tag'] ?? '');
+            $note = trim((string)($row['note'] ?? ''));
+            if ($tag === '' || $note === '' || isset($latest[$tag])) { continue; }
+            $meta = [];
+            if (!empty($row['actor_name'])) { $meta[] = (string)$row['actor_name']; }
+            if (!empty($row['created_at'])) { $meta[] = display_datetime((string)$row['created_at']); }
+            $latest[$tag] = $tag . ($meta ? ' — ' . implode(', ', $meta) : '') . "\n" . $note;
+        }
+        return implode("\n\n", array_values($latest));
+    } catch (Throwable $e) {
+        return '';
+    }
+}
+
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 if ($id <= 0) {
     http_response_code(400);
@@ -56,6 +90,7 @@ if ((!$isStaff && !$ownsReservation) || ($isStaff && !staff_group_visibility_res
 
 // Load items via shared helper
 $items = get_reservation_items_with_names($pdo, $id);
+$checkinNotes = $isStaff ? reservation_detail_checkin_notes($pdo, (string)($reservation['asset_name_cache'] ?? '')) : '';
 
 $active  = $isStaff ? 'staff_reservations.php' : 'my_bookings.php';
 ?>
@@ -122,6 +157,9 @@ $active  = $isStaff ? 'staff_reservations.php' : 'my_bookings.php';
                     <?php endif; ?>
                     <?php if ($isStaff && !empty($reservation['checkout_note'])): ?>
                         <strong>Checkout note:</strong> <?= nl2br(h($reservation['checkout_note'])) ?><br>
+                    <?php endif; ?>
+                    <?php if ($isStaff && $checkinNotes !== ''): ?>
+                        <strong>Check-in notes:</strong><br><?= nl2br(h($checkinNotes)) ?><br>
                     <?php endif; ?>
                 </p>
             </div>
