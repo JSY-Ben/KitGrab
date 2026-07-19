@@ -1044,6 +1044,54 @@ try {
                 }
                 $assetNotesById[$assetId][] = $row;
             }
+
+            $assetIdByTag = [];
+            foreach ($assets as $assetRow) {
+                $rowId = (int)($assetRow['id'] ?? 0);
+                $rowTag = trim((string)($assetRow['asset_tag'] ?? ''));
+                if ($rowId > 0 && $rowTag !== '') { $assetIdByTag[$rowTag] = $rowId; }
+            }
+            $tagConditions = [];
+            $reservationParams = $assetIds;
+            foreach (array_keys($assetIdByTag) as $assetTag) {
+                $tagConditions[] = 'asset_name_cache LIKE ?';
+                $reservationParams[] = '%' . $assetTag . '%';
+            }
+            $reservationWhere = 'asset_id IN (' . $placeholders . ')';
+            if ($tagConditions) { $reservationWhere .= ' OR ' . implode(' OR ', $tagConditions); }
+            $reservationStmt = $pdo->prepare("SELECT id, asset_id, asset_name_cache, reservation_note, user_name, user_email, created_at
+                FROM reservations
+                WHERE reservation_note IS NOT NULL AND TRIM(reservation_note) <> ''
+                  AND ({$reservationWhere})
+                ORDER BY created_at DESC");
+            $reservationStmt->execute($reservationParams);
+            foreach ($reservationStmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $reservationRow) {
+                $matchedAssetIds = [];
+                $directAssetId = (int)($reservationRow['asset_id'] ?? 0);
+                if (in_array($directAssetId, $assetIds, true)) { $matchedAssetIds[$directAssetId] = true; }
+                foreach (preg_split('/,(?![^()]*\))/', (string)($reservationRow['asset_name_cache'] ?? '')) ?: [] as $assignedPart) {
+                    $assignedPart = trim($assignedPart);
+                    $open = strpos($assignedPart, ' (');
+                    $assignedTag = trim($open === false ? $assignedPart : substr($assignedPart, 0, $open));
+                    if (isset($assetIdByTag[$assignedTag])) { $matchedAssetIds[$assetIdByTag[$assignedTag]] = true; }
+                }
+                foreach (array_keys($matchedAssetIds) as $matchedAssetId) {
+                    $assetNotesById[$matchedAssetId][] = [
+                        'note_type' => 'reservation',
+                        'note' => (string)$reservationRow['reservation_note'],
+                        'created_at' => (string)($reservationRow['created_at'] ?? ''),
+                        'actor_name' => (string)($reservationRow['user_name'] ?? ''),
+                        'actor_email' => (string)($reservationRow['user_email'] ?? ''),
+                        'reservation_id' => (int)($reservationRow['id'] ?? 0),
+                    ];
+                }
+            }
+            foreach ($assetNotesById as &$combinedNotes) {
+                usort($combinedNotes, static function (array $a, array $b): int {
+                    return strcmp((string)($b['created_at'] ?? ''), (string)($a['created_at'] ?? ''));
+                });
+            }
+            unset($combinedNotes);
         }
     }
 } catch (Throwable $e) {
@@ -1909,6 +1957,7 @@ if ($modelEditId > 0) {
                                     <option value="">All types</option>
                                     <option value="checkin">Check-in</option>
                                     <option value="checkout">Checkout</option>
+                                    <option value="reservation">Reservation</option>
                                 </select>
                             </div>
                         </div>
@@ -1926,7 +1975,7 @@ if ($modelEditId > 0) {
                                     <?php foreach ($notes as $note): ?>
                                         <?php
                                             $noteType = $note['note_type'] ?? '';
-                                            $noteLabel = $noteType === 'checkout' ? 'Checkout' : 'Check-in';
+                                            $noteLabel = $noteType === 'checkout' ? 'Checkout' : ($noteType === 'reservation' ? 'Reservation' : 'Check-in');
                                             $createdAt = $note['created_at'] ?? '';
                                             $displayDate = $createdAt !== '' ? layout_format_datetime($createdAt) : '';
                                             $actorName = trim((string)($note['actor_name'] ?? ''));
@@ -1944,7 +1993,7 @@ if ($modelEditId > 0) {
                                             <td class="text-nowrap"><?= h($displayDate) ?></td>
                                             <td><?= h($noteLabel) ?></td>
                                             <td><?= h($actorLabel) ?></td>
-                                            <td><?= h($note['note'] ?? '') ?></td>
+                                            <td><?php if ($noteType === 'reservation' && !empty($note['reservation_id'])): ?><div class="small text-muted mb-1">Reservation #<?= (int)$note['reservation_id'] ?></div><?php endif; ?><?= h($note['note'] ?? '') ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
