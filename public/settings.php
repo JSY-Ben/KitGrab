@@ -2372,7 +2372,7 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
     const settingsTabInput = document.getElementById('settings_tab_input');
     const settingsTabs = Array.from(document.querySelectorAll('#settings-group-tabs [data-settings-tab]'));
     const settingsSections = Array.from(form.querySelectorAll('[data-settings-group]'));
-    const settingsTabAllowed = new Set(['frontend', 'backend', 'permissions', 'notifications']);
+    const settingsTabAllowed = new Set(['frontend', 'backend', 'users', 'permissions', 'notifications']);
 
     form.querySelectorAll('[data-template-editor]').forEach((wrapper) => {
         const editor = wrapper.querySelector('[contenteditable="true"]');
