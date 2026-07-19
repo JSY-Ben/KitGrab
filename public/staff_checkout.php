@@ -1088,15 +1088,18 @@ $active  = basename($_SERVER['PHP_SELF']);
                     <div class="mt-3 alert alert-info mb-0">
                         <div><strong>Selected:</strong> #<?= (int)$selectedReservation['id'] ?> – <?= h($selectedReservation['user_name'] ?? '') ?></div>
                         <div>When: <?= h(display_datetime($selectedReservation['start_datetime'] ?? '')) ?> → <?= h(display_datetime($selectedReservation['end_datetime'] ?? '')) ?></div>
-                        <?php if (!empty($selectedReservation['reservation_note'])): ?>
-                            <div class="alert alert-warning mt-2 mb-2"><strong>Reservation note:</strong><br><?= nl2br(h($selectedReservation['reservation_note'])) ?></div>
-                        <?php endif; ?>
                         <?php if (!empty($selectedItems)): ?>
                             <div>Models &amp; quantities: <?= h(build_items_summary_text($selectedItems)) ?></div>
                         <?php else: ?>
                             <div>This reservation has no items recorded.</div>
                         <?php endif; ?>
                     </div>
+                    <?php if (!empty($selectedReservation['reservation_note'])): ?>
+                        <div class="alert alert-warning mt-3 mb-0">
+                            <strong>Reservation note:</strong><br>
+                            <?= nl2br(h($selectedReservation['reservation_note'])) ?>
+                        </div>
+                    <?php endif; ?>
                 <?php endif; ?>
 
                 <?php if (!empty($futureReservationEarlyConflicts)): ?>
