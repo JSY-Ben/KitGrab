@@ -1,36 +1,42 @@
 # Changelog
 
-## v1.2.2 - User registration
+## v1.2.2
 
-- Added optional public registration for local user accounts.
-- Added configurable administrator approval for newly registered accounts.
+All new features require a database upgrade. After updating the files to v1.2.2, you will be warned when logging in that you will need to run the upgrade script. However, if you'd prefer to do this manually, please do the following:
+
+Run the upgrade script at www.yourinstallation.com/install/upgrade through a browser.
+
+Use the new SQL backup button on the upgrade page to download a database backup before applying the upgrades.
+
+As always, please report any issues or feature requests to the appopriate section on GitHub.
+
+- Added ability for admins to enable users to register their own local user accounts.
+- Added ability for administrators to require approval for newly registered accounts.
 - Added pending-account visibility and approval controls to the Users page.
 - Added approval emails and configurable administrator notifications when user accounts are created.
 - Added customisable welcome, pending-approval, and account-approved user email templates.
+
 - Grouped notification settings into separate user, reservation, equipment, and scheduled-alert sections.
+
 - Added optional local-user profile editing and profile photos controlled from User Settings.
 
-Run the browser upgrade after installing this release to add account approval status storage.
 
-## v1.2.1 - Password recovery
+## v1.2.1
 
-- Added a forgotten-password flow for local accounts.
-- Added secure, expiring, single-use password reset links delivered through the configured SMTP service.
-- Added request throttling and neutral responses to prevent account discovery.
+- Added a forgotten-password option for local user accounts, which will email the affected user with a reset link.
 
-Run the browser upgrade after installing this release to add secure password reset token storage.
 
-## v1.2.0 - Reservation workflow and usability update
+## v1.2.0
 
 - Added the ability for users to add a note to the checkout user when submitting their reservation
 - Reservations are now cancelled by default and not deleted, therefore retained in history; permanent deletion is restricted to administrators with additional completed-reservation confirmation.
-- Added search, date filtering, pagination, quick column sorting, and remembered sort choices to My Reservations.
+- Completely redesigned 'My Reservations' page with search, date filtering, pagination and quick column sorting. All set options are now cached so you don't have to set them every time you login.
 - Added item thumbnails to checked-out listings.
-- Guest actions now resume after login and guest buttons explain that login is required.
-- Added application-wide busy feedback, enhanced date/time pickers with an integrated Today action, and staff links from catalogue booking calendars to reservation details.
-- Added non-blocking file locks to scheduled jobs to prevent overlapping runs.
+- If a click requires you to login, that click is now remembered after login, rather than sending you straight to the dashboard.
+- Enhanced date/time pickers with an integrated Today button.
+- Catalogue booking calendars now have links on each listing to the details of that reservation (staff users only).
+- Cron scripts now create a lock file when run to prevent issues if the script is run twice at the same time by accident.
 
-Run the browser upgrade after installing this release to add the reservation note fields.
 
 ## v1.0.5 - Official Release + New Features
 
