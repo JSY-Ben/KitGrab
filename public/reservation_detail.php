@@ -22,12 +22,6 @@ function display_datetime(?string $isoDatetime): string
     return app_format_datetime($isoDatetime);
 }
 
-if (!$isStaff) {
-    http_response_code(403);
-    echo 'Access denied.';
-    exit;
-}
-
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 if ($id <= 0) {
     http_response_code(400);
@@ -52,7 +46,9 @@ if (!$reservation) {
     exit;
 }
 
-if (!staff_group_visibility_reservation_visible($reservation, $currentUser, $restrictReservationsToSameGroup)) {
+$ownsReservation = (string)($reservation['user_id'] ?? '') === (string)($currentUser['id'] ?? '')
+    || strtolower(trim((string)($reservation['user_email'] ?? ''))) === strtolower(trim((string)($currentUser['email'] ?? '')));
+if ((!$isStaff && !$ownsReservation) || ($isStaff && !staff_group_visibility_reservation_visible($reservation, $currentUser, $restrictReservationsToSameGroup))) {
     http_response_code(403);
     echo 'Access denied.';
     exit;
@@ -61,7 +57,7 @@ if (!staff_group_visibility_reservation_visible($reservation, $currentUser, $res
 // Load items via shared helper
 $items = get_reservation_items_with_names($pdo, $id);
 
-$active  = 'staff_reservations.php'; // Treat detail view as part of booking history.
+$active  = $isStaff ? 'staff_reservations.php' : 'my_bookings.php';
 ?>
 <!DOCTYPE html>
 <html>
@@ -96,7 +92,7 @@ $active  = 'staff_reservations.php'; // Treat detail view as part of booking his
                 (<?= h($currentUser['email'] ?? '') ?>)
             </div>
             <div class="top-bar-actions">
-                <a href="staff_reservations.php" class="btn btn-outline-secondary btn-sm">Back to all bookings</a>
+                <a href="<?= $isStaff ? 'staff_reservations.php' : 'my_bookings.php' ?>" class="btn btn-outline-secondary btn-sm"><?= $isStaff ? 'Back to all bookings' : 'Back to My Reservations' ?></a>
                 <a href="logout.php" class="btn btn-link btn-sm">Log out</a>
             </div>
         </div>
@@ -124,7 +120,7 @@ $active  = 'staff_reservations.php'; // Treat detail view as part of booking his
                     <?php if (!empty($reservation['reservation_note'])): ?>
                         <strong>Reservation note:</strong> <?= nl2br(h($reservation['reservation_note'])) ?><br>
                     <?php endif; ?>
-                    <?php if (!empty($reservation['checkout_note'])): ?>
+                    <?php if ($isStaff && !empty($reservation['checkout_note'])): ?>
                         <strong>Checkout note:</strong> <?= nl2br(h($reservation['checkout_note'])) ?><br>
                     <?php endif; ?>
                 </p>
@@ -158,7 +154,7 @@ $active  = 'staff_reservations.php'; // Treat detail view as part of booking his
             </div>
         <?php endif; ?>
 
-        <form method="post" action="delete_reservation.php"
+        <?php if ($isAdmin): ?><form method="post" action="delete_reservation.php"
               onsubmit="return confirm('Permanently delete this booking and all its history? This cannot be undone.');">
             <input type="hidden" name="reservation_id" value="<?= (int)$id ?>">
             <input type="hidden" name="force_delete" value="1">
@@ -168,7 +164,7 @@ $active  = 'staff_reservations.php'; // Treat detail view as part of booking his
             <button class="btn btn-outline-danger" type="submit">
                 Delete this booking
             </button>
-        </form>
+        </form><?php endif; ?>
 
     </div>
 </div>

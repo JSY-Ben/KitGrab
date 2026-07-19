@@ -529,6 +529,25 @@ if (!function_exists('layout_render_nav')) {
     }
 }
 
+if (!function_exists('layout_sortable_column_header')) {
+    function layout_sortable_column_header(string $label, string $ascendingSort, string $descendingSort, string $currentSort): string
+    {
+        $params = $_GET;
+        unset($params['page']);
+        $script = basename((string)($_SERVER['PHP_SELF'] ?? ''));
+        $buildUrl = static function (string $sort) use ($params, $script): string {
+            $next = $params; $next['sort'] = $sort;
+            return $script . '?' . http_build_query($next);
+        };
+        $escape = static fn(string $value): string => htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        return '<span class="table-sort-heading"><span class="table-sort-heading__label">' . $escape($label) . '</span>'
+            . '<span class="table-sort-heading__buttons">'
+            . '<a class="table-sort-button' . ($currentSort === $ascendingSort ? ' is-active' : '') . '" href="' . $escape($buildUrl($ascendingSort)) . '" aria-label="Sort ' . $escape($label) . ' ascending" title="Sort ascending">↑</a>'
+            . '<a class="table-sort-button' . ($currentSort === $descendingSort ? ' is-active' : '') . '" href="' . $escape($buildUrl($descendingSort)) . '" aria-label="Sort ' . $escape($label) . ' descending" title="Sort descending">↓</a>'
+            . '</span></span>';
+    }
+}
+
 if (!function_exists('layout_footer')) {
     function layout_footer(): void
     {
