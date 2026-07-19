@@ -359,6 +359,7 @@ function layout_notification_template_editor(string $templateKey, array $config)
         'Username' => '{{username}}',
         'Approval status' => '{{approval_status}}',
         'Login link' => '{{login_link}}',
+        'Users admin page' => '{{users_admin_link}}',
         'Equipment' => '{{equipment_list}}',
         'Start date' => '{{start_date}}',
         'Return date' => '{{return_date}}',

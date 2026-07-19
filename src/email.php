@@ -248,7 +248,7 @@ function layout_notification_template_definitions(): array
         'new_user_registered' => [
             'label' => 'New user created email text',
             'config_key' => 'notification_new_user_template_html',
-            'default' => '<p>A new user account has been created.</p><p><strong>Name:</strong> {{person_name}}<br><strong>Email:</strong> {{person_email}}<br><strong>Username:</strong> {{username}}<br><strong>Approval status:</strong> {{approval_status}}</p>',
+            'default' => '<p>A new user account has been created.</p><p><strong>Name:</strong> {{person_name}}<br><strong>Email:</strong> {{person_email}}<br><strong>Username:</strong> {{username}}<br><strong>Approval status:</strong> {{approval_status}}</p><p>{{users_admin_link}}</p>',
         ],
         'welcome_user_approved' => [
             'label' => 'Welcome email for immediately approved users',
@@ -328,7 +328,7 @@ function layout_render_notification_template(string $templateKey, array $variabl
         }
     }
     // Known but unavailable values become empty rather than leaking a token.
-    foreach (['recipient_name','person_name','person_email','username','approval_status','login_link','equipment_list','start_date','return_date','app_name','reservation_id','reservation_link','my_reservations_link','staff_reservations_link','staff_name','staff_email','note','reservation_note'] as $name) {
+    foreach (['recipient_name','person_name','person_email','username','approval_status','login_link','users_admin_link','equipment_list','start_date','return_date','app_name','reservation_id','reservation_link','my_reservations_link','staff_reservations_link','staff_name','staff_email','note','reservation_note'] as $name) {
         $token = '{{' . $name . '}}';
         $htmlReplacements[$token] = $htmlReplacements[$token] ?? '';
         $textReplacements[$token] = $textReplacements[$token] ?? '';
@@ -1018,6 +1018,7 @@ function layout_notify_new_user_created(array $user, ?array $cfg = null): void
         'person_email' => $email,
         'username' => (string)($user['username'] ?? ''),
         'approval_status' => !empty($user['is_approved']) ? 'Approved' : 'Pending administrator approval',
+        'users_admin_link' => layout_app_page_url('users.php', $config),
     ];
     $lines = [
         'A new user account has been created.',
@@ -1025,6 +1026,7 @@ function layout_notify_new_user_created(array $user, ?array $cfg = null): void
         'Email: ' . $email,
         'Username: ' . (string)($user['username'] ?? ''),
         'Approval status: ' . $variables['approval_status'],
+        $variables['users_admin_link'] !== '' ? 'Manage users: ' . $variables['users_admin_link'] : null,
     ];
 
     $notified = [];
