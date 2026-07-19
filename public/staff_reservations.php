@@ -37,6 +37,8 @@ if (!$isStaff) {
 $deletedMsg = '';
 if (!empty($_GET['deleted'])) {
     $deletedMsg = 'Reservation #' . (int)$_GET['deleted'] . ' has been deleted.';
+} elseif (!empty($_GET['cancelled'])) {
+    $deletedMsg = 'Reservation #' . (int)$_GET['cancelled'] . ' has been cancelled and retained in history.';
 }
 $updatedMsg = '';
 if (!empty($_GET['updated'])) {
@@ -71,7 +73,9 @@ $sortOptions = [
     'id_desc' => 'id DESC',
     'id_asc' => 'id ASC',
 ];
-$sort = array_key_exists($sortRaw, $sortOptions) ? $sortRaw : 'start_desc';
+if ($sortRaw !== '' && array_key_exists($sortRaw, $sortOptions)) { $_SESSION['staff_reservations_sort'] = $sortRaw; }
+$sort = array_key_exists($sortRaw, $sortOptions) ? $sortRaw : (string)($_SESSION['staff_reservations_sort'] ?? 'start_desc');
+if (!array_key_exists($sort, $sortOptions)) { $sort = 'start_desc'; }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'restore_missed') {
     $restoreId = (int)($_POST['reservation_id'] ?? 0);
@@ -485,7 +489,10 @@ try {
                                 <td data-label="ID">#<?= (int)$r['id'] ?></td>
                                 <td data-label="User Name"><?= h($r['user_name'] ?? '(Unknown)') ?></td>
                                 <td data-label="Items Reserved" class="items-cell">
+                                    <?php if (!empty($items[0]['image'])): ?><img src="<?= h($items[0]['image']) ?>" alt="" class="item-thumbnail mb-2" loading="lazy"><?php endif; ?>
                                     <?= $itemsText !== '' ? '<div class="items-cell-content">' . $itemsText . '</div>' : '' ?>
+                                    <?php if (!empty($r['reservation_note'])): ?><details class="mt-2"><summary class="btn btn-sm btn-outline-secondary">Reservation note</summary><div class="small mt-2"><?= nl2br(h($r['reservation_note'])) ?></div></details><?php endif; ?>
+                                    <?php if (!empty($r['checkout_note'])): ?><details class="mt-2"><summary class="btn btn-sm btn-outline-secondary">Checkout note</summary><div class="small mt-2"><?= nl2br(h($r['checkout_note'])) ?></div></details><?php endif; ?>
                                 </td>
                                 <td data-label="Start"><?= display_datetime($r['start_datetime'] ?? '') ?></td>
                                 <td data-label="End"><?= display_datetime($r['end_datetime'] ?? '') ?></td>
@@ -526,16 +533,24 @@ try {
                                                 </button>
                                             </form>
                                         <?php endif; ?>
+                                        <?php if ($status === 'pending' || $isAdmin): ?>
                                         <form method="post"
                                               action="delete_reservation.php"
-                                              onsubmit="return confirm('Delete this reservation and all its items? This cannot be undone.');">
+                                              onsubmit="return confirm('<?= $status === 'pending' ? 'Cancel this reservation? It will remain in history.' : 'Permanently delete this reservation and all its history? This cannot be undone.' ?>');">
                                             <input type="hidden"
                                                    name="reservation_id"
                                                    value="<?= (int)$r['id'] ?>">
+                                            <?php if ($status !== 'pending'): ?>
+                                                <input type="hidden" name="force_delete" value="1">
+                                            <?php endif; ?>
+                                            <?php if ($status === 'completed'): ?>
+                                                <input type="hidden" name="completed_delete_ack" value="1">
+                                            <?php endif; ?>
                                             <button class="btn btn-sm btn-outline-danger btn-action" type="submit">
-                                                Delete
+                                                <?= $status === 'pending' ? 'Cancel' : 'Delete' ?>
                                             </button>
                                         </form>
+                                        <?php endif; ?>
                                     </div>
                                 </td>
                             </tr>

@@ -161,7 +161,9 @@ $sortOptions = [
     'checkout_desc',
     'checkout_asc',
 ];
-$sort = in_array($sortRaw, $sortOptions, true) ? $sortRaw : 'expected_asc';
+if ($sortRaw !== '' && in_array($sortRaw, $sortOptions, true)) { $_SESSION['checked_out_sort'] = $sortRaw; }
+$sort = in_array($sortRaw, $sortOptions, true) ? $sortRaw : (string)($_SESSION['checked_out_sort'] ?? 'expected_asc');
+if (!in_array($sort, $sortOptions, true)) { $sort = 'expected_asc'; }
 $forceRefresh = isset($_REQUEST['refresh']) && $_REQUEST['refresh'] === '1';
 if ($forceRefresh) {
     // Disable cached local inventory responses for this request
@@ -545,6 +547,7 @@ function layout_checked_out_url(string $base, array $params): string
                         <thead>
                             <tr>
                                 <th></th>
+                                <th>Image</th>
                                 <th>Asset Tag</th>
                                 <th>Name</th>
                                 <th>Model</th>
@@ -562,6 +565,7 @@ function layout_checked_out_url(string $base, array $params): string
                                     $atag = $a['asset_tag'] ?? '';
                                     $name = $a['name'] ?? '';
                                     $model = $a['model']['name'] ?? '';
+                                    $modelImage = $a['model']['image'] ?? '';
                                     $user  = $a['assigned_to'] ?? ($a['assigned_to_fullname'] ?? '');
                                     if (is_array($user)) {
                                         $user = $user['name'] ?? ($user['username'] ?? '');
@@ -584,6 +588,7 @@ function layout_checked_out_url(string $base, array $params): string
                                                name="bulk_asset_ids[]"
                                                value="<?= $aid ?>">
                                     </td>
+                                    <td><?php if ($modelImage !== ''): ?><img src="<?= h($modelImage) ?>" alt="" class="item-thumbnail" loading="lazy"><?php endif; ?></td>
                                     <td><?= h($atag) ?></td>
                                     <td><?= h($name) ?></td>
                                     <td><?= h($model) ?></td>

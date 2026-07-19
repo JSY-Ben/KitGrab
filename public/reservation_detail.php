@@ -121,6 +121,12 @@ $active  = 'staff_reservations.php'; // Treat detail view as part of booking his
                         <strong>Checked-out assets:</strong>
                         <?= h($reservation['asset_name_cache']) ?><br>
                     <?php endif; ?>
+                    <?php if (!empty($reservation['reservation_note'])): ?>
+                        <strong>Reservation note:</strong> <?= nl2br(h($reservation['reservation_note'])) ?><br>
+                    <?php endif; ?>
+                    <?php if (!empty($reservation['checkout_note'])): ?>
+                        <strong>Checkout note:</strong> <?= nl2br(h($reservation['checkout_note'])) ?><br>
+                    <?php endif; ?>
                 </p>
             </div>
         </div>
@@ -152,10 +158,13 @@ $active  = 'staff_reservations.php'; // Treat detail view as part of booking his
             </div>
         <?php endif; ?>
 
-        <form method="post"
-              action="delete_reservation.php"
-              onsubmit="return confirm('Delete this booking and all its items? This cannot be undone.');">
+        <form method="post" action="delete_reservation.php"
+              onsubmit="return confirm('Permanently delete this booking and all its history? This cannot be undone.');">
             <input type="hidden" name="reservation_id" value="<?= (int)$id ?>">
+            <input type="hidden" name="force_delete" value="1">
+            <?php if (strtolower((string)$reservation['status']) === 'completed'): ?>
+                <input type="hidden" name="completed_delete_ack" value="1">
+            <?php endif; ?>
             <button class="btn btn-outline-danger" type="submit">
                 Delete this booking
             </button>

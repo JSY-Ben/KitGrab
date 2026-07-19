@@ -15,6 +15,7 @@ $user = $userOverride ?: $currentUser;
 $assetId  = (int)($_POST['asset_id'] ?? 0);
 $startRaw = $_POST['start_datetime'] ?? '';
 $endRaw   = $_POST['end_datetime'] ?? '';
+$reservationNote = trim((string)($_POST['reservation_note'] ?? ''));
 
 if (!$assetId || !$startRaw || !$endRaw) {
     die('Missing required fields.');
@@ -104,11 +105,11 @@ $insert = $pdo->prepare("
     INSERT INTO reservations (
         user_name, user_email, user_id,
         asset_id, asset_name_cache,
-        start_datetime, end_datetime, status
+        start_datetime, end_datetime, status, reservation_note
     ) VALUES (
         :user_name, :user_email, :user_id,
         :asset_id, :asset_name_cache,
-        :start_datetime, :end_datetime, 'pending'
+        :start_datetime, :end_datetime, 'pending', :reservation_note
     )
 ");
 $insert->execute([
@@ -119,6 +120,7 @@ $insert->execute([
     ':asset_name_cache' => 'Pending checkout',
     ':start_datetime'   => $start,
     ':end_datetime'     => $end,
+    ':reservation_note' => $reservationNote !== '' ? $reservationNote : null,
 ]);
 
 $reservationId = (int)$pdo->lastInsertId();
@@ -175,6 +177,7 @@ if ($notifyEnabled) {
     if ($isOnBehalfBooking) {
         $userBody[] = "Submitted by: {$submittedByDisplay}";
     }
+    if ($reservationNote !== '') { $userBody[] = "Reservation note: {$reservationNote}"; }
 
     $adminBody = [
         "Reservation #{$reservationId} has been submitted.",
@@ -184,6 +187,7 @@ if ($notifyEnabled) {
         "End: {$endDisplay}",
         "Submitted by: {$submittedByDisplay}",
     ];
+    if ($reservationNote !== '') { $adminBody[] = "Reservation note: {$reservationNote}"; }
 
     $templateVariables = [
         'person_name' => $userName,
@@ -197,6 +201,7 @@ if ($notifyEnabled) {
         'staff_reservations_link' => layout_staff_reservations_url($config),
         'staff_name' => $submittedByName !== '' ? $submittedByName : $submittedByEmail,
         'staff_email' => $submittedByEmail,
+        'reservation_note' => $reservationNote,
     ];
 
     $notifiedEmails = [];

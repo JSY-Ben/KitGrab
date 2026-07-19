@@ -159,6 +159,8 @@ CREATE TABLE IF NOT EXISTS reservations (
 
     -- Cached display string of items (for quick admin lists)
     asset_name_cache TEXT NULL,
+    reservation_note TEXT NULL,
+    checkout_note TEXT NULL,
 
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -290,4 +292,5 @@ INSERT IGNORE INTO schema_version (version)
 VALUES ('0.10.0 (Beta)'),
        ('0.12.0-Beta'),
        ('1.0.0'),
-       ('1.0.5');
+       ('1.0.5'),
+       ('1.2.0');

@@ -347,6 +347,7 @@ function layout_notification_template_editor(string $templateKey, array $config)
         'Staff name' => '{{staff_name}}',
         'Staff email' => '{{staff_email}}',
         'Note' => '{{note}}',
+        'Reservation note' => '{{reservation_note}}',
         'Recipient name' => '{{recipient_name}}',
     ];
     ?>

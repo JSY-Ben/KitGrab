@@ -793,8 +793,10 @@ function list_checked_out_assets(bool $overdueOnly = false): array
             assigned_to_username,
             status_label,
             last_checkout,
-            expected_checkin
+            expected_checkin,
+            asset_models.image_url AS model_image_url
         FROM checked_out_asset_cache
+        LEFT JOIN asset_models ON asset_models.id = checked_out_asset_cache.model_id
     ";
     $stmt = $pdo->query($sql);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -842,6 +844,7 @@ function list_checked_out_assets(bool $overdueOnly = false): array
             'model' => [
                 'id' => (int)($row['model_id'] ?? 0),
                 'name' => $row['model_name'] ?? '',
+                'image' => $row['model_image_url'] ?? '',
             ],
             'status_label' => $row['status_label'] ?? '',
             'last_checkout' => $row['last_checkout'] ?? '',

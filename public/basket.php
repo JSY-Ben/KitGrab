@@ -389,6 +389,12 @@ if (!empty($basket)) {
                 <input type="hidden" name="end_datetime"
                        value="<?= htmlspecialchars($previewEndRaw) ?>">
 
+                <div class="mb-3">
+                    <label for="reservation_note" class="form-label fw-semibold">Reservation note <span class="text-muted fw-normal">(optional)</span></label>
+                    <textarea id="reservation_note" name="reservation_note" class="form-control" rows="3" maxlength="4000"
+                              placeholder="Anything staff should know when preparing this booking?"></textarea>
+                </div>
+
                 <p class="mb-2 text-muted">
                     When you click <strong>Confirm booking</strong>, the system will re-check availability
                     and reject the booking if another user has taken items in the meantime.

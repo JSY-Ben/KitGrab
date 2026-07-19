@@ -803,7 +803,7 @@ function catalogue_category_id_map_from_models(array $models): array
     return $categoryIds;
 }
 
-function fetch_catalogue_model_bookings(PDO $pdo, int $modelId, array $assetIds): array
+function fetch_catalogue_model_bookings(PDO $pdo, int $modelId, array $assetIds, bool $includeUser = false): array
 {
     $allowedStatuses = ['pending', 'confirmed', 'completed', 'missed'];
     $bookingsById = [];
@@ -812,6 +812,7 @@ function fetch_catalogue_model_bookings(PDO $pdo, int $modelId, array $assetIds)
         SELECT
             r.id,
             r.status,
+            r.user_name,
             r.start_datetime,
             r.end_datetime,
             COALESCE(SUM(ri.quantity), 0) AS model_qty
@@ -820,7 +821,7 @@ function fetch_catalogue_model_bookings(PDO $pdo, int $modelId, array $assetIds)
           ON ri.reservation_id = r.id
         WHERE ri.model_id = :model_id
           AND r.status IN ('pending','confirmed','completed','missed')
-        GROUP BY r.id, r.status, r.start_datetime, r.end_datetime
+        GROUP BY r.id, r.status, r.user_name, r.start_datetime, r.end_datetime
     ";
     $modelStmt = $pdo->prepare($modelSql);
     $modelStmt->execute([':model_id' => $modelId]);
@@ -834,6 +835,7 @@ function fetch_catalogue_model_bookings(PDO $pdo, int $modelId, array $assetIds)
         $bookingsById[$reservationId] = [
             'id' => $reservationId,
             'status' => (string)($row['status'] ?? ''),
+            'user_name' => (string)($row['user_name'] ?? ''),
             'start_datetime' => (string)($row['start_datetime'] ?? ''),
             'end_datetime' => (string)($row['end_datetime'] ?? ''),
             'quantity' => max(1, (int)($row['model_qty'] ?? 0)),
@@ -851,7 +853,7 @@ function fetch_catalogue_model_bookings(PDO $pdo, int $modelId, array $assetIds)
         foreach ($assetChunks as $chunk) {
             $placeholders = implode(',', array_fill(0, count($chunk), '?'));
             $assetSql = "
-                SELECT id, status, start_datetime, end_datetime
+                SELECT id, status, user_name, start_datetime, end_datetime
                   FROM reservations
                  WHERE status IN ('pending','confirmed','completed','missed')
                    AND asset_id IN ({$placeholders})
@@ -874,6 +876,7 @@ function fetch_catalogue_model_bookings(PDO $pdo, int $modelId, array $assetIds)
                 $bookingsById[$reservationId] = [
                     'id' => $reservationId,
                     'status' => (string)($row['status'] ?? ''),
+                    'user_name' => (string)($row['user_name'] ?? ''),
                     'start_datetime' => (string)($row['start_datetime'] ?? ''),
                     'end_datetime' => (string)($row['end_datetime'] ?? ''),
                     'quantity' => 1,
@@ -911,6 +914,7 @@ function fetch_catalogue_model_bookings(PDO $pdo, int $modelId, array $assetIds)
             'end_display' => app_format_datetime($endRaw),
             'quantity' => max(1, (int)($booking['quantity'] ?? 1)),
             'source' => $source,
+            'user_name' => $includeUser ? (string)($booking['user_name'] ?? '') : '',
         ];
     }
 
@@ -963,7 +967,7 @@ if (($_GET['ajax'] ?? '') === 'model_details') {
                 : 'Could not load all model assets.';
         }
 
-        $bookings = fetch_catalogue_model_bookings($pdo, $modelId, $assetIds);
+        $bookings = fetch_catalogue_model_bookings($pdo, $modelId, $assetIds, $isStaff);
 
         echo json_encode([
             'model' => [
@@ -1404,7 +1408,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                     <a href="login.php"
                        class="btn btn-lg btn-primary fw-semibold shadow-sm px-4"
                        style="font-size:16px;">
-                        View basket
+                        Login to view basket
                     </a>
                 </div>
             <?php endif; ?>
@@ -1858,7 +1862,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                                         <button type="button"
                                                 class="btn btn-sm btn-secondary w-100 mt-2"
                                                 disabled>
-                                            Add to basket
+                                            <?= $isAuthenticated ? 'Add to basket' : 'Login to add to basket' ?>
                                         </button>
                                     <?php elseif ($isRequestable && $freeNow > 0): ?>
                                         <div class="row g-2 align-items-center mb-2">
@@ -1875,7 +1879,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
 
                                         <button type="submit"
                                                 class="btn btn-sm btn-success w-100">
-                                            Add to basket
+                                            <?= $isAuthenticated ? 'Add to basket' : 'Login to add to basket' ?>
                                         </button>
                                     <?php else: ?>
                                         <div class="alert alert-secondary small mb-0">
@@ -2444,6 +2448,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         return {
             id: parseInt(raw.id, 10) || 0,
+            user_name: String(raw.user_name || ''),
             status: String(raw.status || '').toLowerCase(),
             source: String(raw.source || 'model').toLowerCase(),
             quantity: Math.max(1, parseInt(raw.quantity, 10) || 1),
@@ -2487,7 +2492,16 @@ document.addEventListener('DOMContentLoaded', function () {
             const tr = document.createElement('tr');
 
             const idCell = document.createElement('td');
-            idCell.textContent = booking.id > 0 ? '#' + booking.id : 'N/A';
+            <?php if ($isStaff): ?>
+            if (booking.id > 0) {
+                const detailLink = document.createElement('a');
+                detailLink.href = 'reservation_detail.php?id=' + booking.id;
+                detailLink.textContent = '#' + booking.id + (booking.user_name ? ' (' + booking.user_name + ')' : '');
+                idCell.appendChild(detailLink);
+            } else { idCell.textContent = 'N/A'; }
+            <?php else: ?>
+            idCell.textContent = booking.id > 0 ? '#' + booking.id + (booking.user_name ? ' (' + booking.user_name + ')' : '') : 'N/A';
+            <?php endif; ?>
 
             const statusCell = document.createElement('td');
             const statusBadge = document.createElement('span');
@@ -2607,9 +2621,10 @@ document.addEventListener('DOMContentLoaded', function () {
                     const eventsList = document.createElement('div');
                     eventsList.className = 'model-calendar-events';
                     dayBookings.slice(0, 3).forEach(function (booking) {
-                        const eventPill = document.createElement('span');
+                        const eventPill = document.createElement(<?= $isStaff ? "'a'" : "'span'" ?>);
                         eventPill.className = 'model-calendar-event ' + bookingStatusClass(booking.status);
-                        eventPill.textContent = '#' + booking.id;
+                        eventPill.textContent = '#' + booking.id<?= $isStaff ? " + (booking.user_name ? ' (' + booking.user_name + ')' : '')" : '' ?>;
+                        <?php if ($isStaff): ?>eventPill.href = 'reservation_detail.php?id=' + booking.id;<?php endif; ?>
                         eventsList.appendChild(eventPill);
                     });
 

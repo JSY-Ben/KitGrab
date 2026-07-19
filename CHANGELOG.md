@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.2.0 - Reservation workflow and usability update
+
+- Added the ability for users to add a note to the checkout user when submitting their reservation
+- Reservations are now cancelled by default and not deleted, therefore retained in history; permanent deletion is restricted to administrators with additional completed-reservation confirmation.
+- Added search, date filtering, pagination, quick column sorting, and remembered sort choices to My Reservations.
+- Added item thumbnails to checked-out listings.
+- Guest actions now resume after login and guest buttons explain that login is required.
+- Added application-wide busy feedback, enhanced date/time pickers with an integrated Today action, and staff links from catalogue booking calendars to reservation details.
+- Added non-blocking file locks to scheduled jobs to prevent overlapping runs.
+
+Run the browser upgrade after installing this release to add the reservation note fields.
+
 ## v1.0.5 - Official Release + New Features
 
 This is now our official first public non-beta release! Thank you to everyone who has downloaded the app so far. 

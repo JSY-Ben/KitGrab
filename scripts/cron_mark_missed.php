@@ -9,6 +9,8 @@ require_once __DIR__ . '/../src/bootstrap.php';
 require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/activity_log.php';
 require_once SRC_PATH . '/email.php';
+require_once SRC_PATH . '/cron_lock.php';
+$cronLock = cron_acquire_lock('mark-missed');
 
 $config = load_config();
 $scriptTz = app_get_timezone($config);

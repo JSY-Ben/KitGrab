@@ -2024,3 +2024,19 @@ form .form-select {
     box-shadow: 0 0 0 .25rem rgba(var(--primary-rgb), .25);
     outline: 0;
 }
+.item-thumbnail {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: .45rem;
+    background: var(--bs-secondary-bg);
+}
+.app-busy-overlay {
+    position: fixed; inset: 0; z-index: 10000; display: none;
+    place-items: center; background: rgba(15, 23, 42, .38); backdrop-filter: blur(3px);
+}
+.app-busy-overlay.is-visible { display: grid; }
+.app-busy-card { display: flex; align-items: center; gap: .85rem; padding: 1rem 1.25rem; border-radius: .75rem; background: var(--bs-body-bg); box-shadow: 0 1rem 3rem rgba(0,0,0,.25); }
+.flatpickr-calendar { border: 2px solid var(--bs-primary); box-shadow: 0 1rem 2.5rem rgba(0,0,0,.24); }
+.flatpickr-time { border-top: 2px solid var(--bs-border-color); }
+.flatpickr-today-action { width: calc(100% - 1rem); margin: .5rem; padding: .35rem; border: 0; border-radius: .4rem; color: #fff; background: var(--bs-primary); font-weight: 600; }

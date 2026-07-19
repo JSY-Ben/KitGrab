@@ -762,12 +762,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $upd = $pdo->prepare("
                             UPDATE reservations
                                SET status = 'completed',
-                                   asset_name_cache = :assets_text
+                                   asset_name_cache = :assets_text,
+                                   checkout_note = :checkout_note
                              WHERE id = :id
                         ");
                         $upd->execute([
                             ':id'          => $selectedReservationId,
                             ':assets_text' => $assetsText,
+                            ':checkout_note' => $note !== '' ? $note : null,
                         ]);
                         $checkoutMessages[] = 'Reservation marked as checked out.';
                         if ($selectedReservationId) {
@@ -813,6 +815,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'staff_name' => $staffName,
                             'staff_email' => $staffEmail,
                             'note' => $note,
+                            'reservation_note' => (string)($selectedReservation['reservation_note'] ?? ''),
                         ];
                         $appCfg = $config['app'] ?? [];
                         $notifyEnabled = array_key_exists('notification_staff_checkout_enabled', $appCfg)
@@ -1085,6 +1088,9 @@ $active  = basename($_SERVER['PHP_SELF']);
                     <div class="mt-3 alert alert-info mb-0">
                         <div><strong>Selected:</strong> #<?= (int)$selectedReservation['id'] ?> – <?= h($selectedReservation['user_name'] ?? '') ?></div>
                         <div>When: <?= h(display_datetime($selectedReservation['start_datetime'] ?? '')) ?> → <?= h(display_datetime($selectedReservation['end_datetime'] ?? '')) ?></div>
+                        <?php if (!empty($selectedReservation['reservation_note'])): ?>
+                            <div class="alert alert-warning mt-2 mb-2"><strong>Reservation note:</strong><br><?= nl2br(h($selectedReservation['reservation_note'])) ?></div>
+                        <?php endif; ?>
                         <?php if (!empty($selectedItems)): ?>
                             <div>Models &amp; quantities: <?= h(build_items_summary_text($selectedItems)) ?></div>
                         <?php else: ?>

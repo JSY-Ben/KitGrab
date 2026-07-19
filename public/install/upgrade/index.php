@@ -205,7 +205,7 @@ function upgrade_stream_database_backup(PDO $pdo, string $databaseName, string $
     echo "COMMIT;\n";
 }
 
-$targetVersion = '1.0.5';
+$targetVersion = '1.2.0';
 $configExists = is_file($configPath) || is_file($legacyConfigPath);
 $messages = [];
 $errors = [];
@@ -381,6 +381,31 @@ $migrations = [
                         ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
+        },
+    ],
+    [
+        'version' => '1.2.0',
+        'label' => 'Add reservation and checkout notes',
+        'is_applied' => static function (PDO $pdo, array $appliedVersions): bool {
+            try {
+                $pdo->query('SELECT reservation_note, checkout_note FROM reservations LIMIT 1');
+                return isset($appliedVersions['1.2.0']);
+            } catch (Throwable $e) {
+                return false;
+            }
+        },
+        'run' => static function (PDO $pdo): void {
+            $columnExists = static function (string $column) use ($pdo): bool {
+                $stmt = $pdo->prepare("SHOW COLUMNS FROM reservations LIKE :column");
+                $stmt->execute([':column' => $column]);
+                return (bool)$stmt->fetch(PDO::FETCH_ASSOC);
+            };
+            if (!$columnExists('reservation_note')) {
+                $pdo->exec('ALTER TABLE reservations ADD COLUMN reservation_note TEXT NULL AFTER asset_name_cache');
+            }
+            if (!$columnExists('checkout_note')) {
+                $pdo->exec('ALTER TABLE reservations ADD COLUMN checkout_note TEXT NULL AFTER reservation_note');
+            }
         },
     ],
 ];

@@ -125,7 +125,9 @@ $sortOptions = [
     'id_desc' => 'id DESC',
     'id_asc'  => 'id ASC',
 ];
-$sort = array_key_exists($sortRaw, $sortOptions) ? $sortRaw : 'time_desc';
+if ($sortRaw !== '' && array_key_exists($sortRaw, $sortOptions)) { $_SESSION['activity_log_sort'] = $sortRaw; }
+$sort = array_key_exists($sortRaw, $sortOptions) ? $sortRaw : (string)($_SESSION['activity_log_sort'] ?? 'time_desc');
+if (!array_key_exists($sort, $sortOptions)) { $sort = 'time_desc'; }
 
 $activityLogRows = [];
 $activityLogError = '';

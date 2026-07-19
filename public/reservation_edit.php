@@ -168,6 +168,7 @@ foreach ($items as $item) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $startRaw = $_POST['start_datetime'] ?? '';
     $endRaw   = $_POST['end_datetime'] ?? '';
+    $reservationNote = trim((string)($_POST['reservation_note'] ?? ''));
     $qtyInput = $_POST['qty'] ?? [];
     $addModelIds = $_POST['add_model_id'] ?? [];
     $addQtyList  = $_POST['add_qty'] ?? [];
@@ -328,12 +329,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $updateRes = $pdo->prepare('
                 UPDATE reservations
                 SET start_datetime = :start,
-                    end_datetime = :end
+                    end_datetime = :end,
+                    reservation_note = :reservation_note
                 WHERE id = :id
             ');
             $updateRes->execute([
                 ':start' => $start,
                 ':end'   => $end,
+                ':reservation_note' => $reservationNote !== '' ? $reservationNote : null,
                 ':id'    => $id,
             ]);
 
@@ -402,6 +405,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $startValue = datetime_local_value($reservation['start_datetime'] ?? '');
 $endValue   = datetime_local_value($reservation['end_datetime'] ?? '');
+$reservationNoteValue = (string)($reservation['reservation_note'] ?? '');
 
 $active = $embedded ? 'reservations.php' : ($fromMy ? 'my_bookings.php' : 'staff_reservations.php');
 $ajaxBase = 'reservation_edit.php?id=' . (int)$id;
@@ -497,6 +501,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                value="<?= h($endValue) ?>"
                                required>
                     </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label" for="reservation_note">Reservation note</label>
+                    <textarea class="form-control" id="reservation_note" name="reservation_note" rows="3" maxlength="4000"><?= h($reservationNoteValue) ?></textarea>
                 </div>
 
                 <?php if (empty($displayItems)): ?>

@@ -29,7 +29,7 @@ if ($resId <= 0) {
 
 // Load reservation to check ownership
 $stmt = $pdo->prepare("
-    SELECT id, user_id, user_email
+    SELECT id, user_id, user_email, status
     FROM reservations
     WHERE id = :id
     LIMIT 1
@@ -43,19 +43,37 @@ if (!$reservation) {
     exit;
 }
 
-$ownsReservation = $currentUserId !== ''
-    && isset($reservation['user_id'])
-    && (string)$reservation['user_id'] === $currentUserId;
+if (!$isStaff) {
+    http_response_code(403);
+    echo 'Users can cancel reservations but cannot permanently delete them.';
+    exit;
+}
 
-if (!$isStaff && !$ownsReservation) {
+if (!staff_group_visibility_reservation_visible($reservation, $currentUser, $restrictReservationsToSameGroup)) {
     http_response_code(403);
     echo 'Access denied.';
     exit;
 }
 
-if ($isStaff && !staff_group_visibility_reservation_visible($reservation, $currentUser, $restrictReservationsToSameGroup)) {
+$status = strtolower((string)($reservation['status'] ?? ''));
+$forceDelete = $isAdmin && !empty($_POST['force_delete']);
+if ($status === 'pending' && !$forceDelete) {
+    $stmt = $pdo->prepare("UPDATE reservations SET status = 'cancelled' WHERE id = :id");
+    $stmt->execute([':id' => $resId]);
+    activity_log_event('reservation_cancelled', 'Reservation cancelled by staff', [
+        'subject_type' => 'reservation', 'subject_id' => $resId,
+    ]);
+    header('Location: staff_reservations.php?cancelled=' . $resId);
+    exit;
+}
+if (!$isAdmin) {
     http_response_code(403);
-    echo 'Access denied.';
+    echo 'Only administrators can permanently delete reservation history.';
+    exit;
+}
+if ($status === 'completed' && empty($_POST['completed_delete_ack'])) {
+    http_response_code(400);
+    echo 'Completed reservations require confirmation because deleting them can make checkout history inconsistent.';
     exit;
 }
 

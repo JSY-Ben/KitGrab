@@ -4,6 +4,7 @@
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once SRC_PATH . '/db.php';
 require_once SRC_PATH . '/activity_log.php';
+require_once SRC_PATH . '/pending_action.php';
 require_once SRC_PATH . '/group_helpers.php';
 
 session_start();
@@ -258,7 +259,7 @@ if ($provider === 'local') {
     ]);
 
     $queuePendingUpgradeModal($isAdmin);
-    header('Location: index.php');
+    header('Location: ' . app_pending_login_redirect());
     exit;
 }
 
@@ -434,7 +435,7 @@ if ($provider === 'google') {
     ]);
 
     $queuePendingUpgradeModal($isAdmin);
-    header('Location: index.php');
+    header('Location: ' . app_pending_login_redirect());
     exit;
 }
 
@@ -653,7 +654,7 @@ if ($provider === 'microsoft') {
     ]);
 
     $queuePendingUpgradeModal($isAdmin);
-    header('Location: index.php');
+    header('Location: ' . app_pending_login_redirect());
     exit;
 }
 
@@ -853,5 +854,5 @@ activity_log_event('user_login', 'User logged in', [
 ldap_unbind($ldap);
 
 $queuePendingUpgradeModal($isAdmin);
-header('Location: index.php');
+header('Location: ' . app_pending_login_redirect());
 exit;

@@ -17,6 +17,8 @@ if (php_sapi_name() !== 'cli') {
 }
 
 require_once __DIR__ . '/../src/bootstrap.php';
+require_once SRC_PATH . '/cron_lock.php';
+$cronLock = cron_acquire_lock('email-overdue-users');
 require_once SRC_PATH . '/inventory_client.php';
 require_once SRC_PATH . '/email.php';
 

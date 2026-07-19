@@ -119,6 +119,21 @@ if (!function_exists('layout_known_database_upgrades')) {
                     }
                 },
             ],
+            [
+                'version' => '1.2.0',
+                'description' => 'Add reservation and checkout notes.',
+                'is_applied' => static function (PDO $pdo): bool {
+                    try {
+                        $stmt = $pdo->prepare('SELECT 1 FROM schema_version WHERE version = :version LIMIT 1');
+                        $stmt->execute([':version' => '1.2.0']);
+                        $versionApplied = (bool)$stmt->fetchColumn();
+                        $pdo->query('SELECT reservation_note, checkout_note FROM reservations LIMIT 1');
+                        return $versionApplied;
+                    } catch (Throwable $e) {
+                        return false;
+                    }
+                },
+            ],
         ];
     }
 }
@@ -478,6 +493,7 @@ if (!function_exists('layout_render_nav')) {
             $links = [
                 ['href' => 'index.php',     'label' => 'Dashboard', 'staff' => false],
                 ['href' => 'catalogue.php', 'label' => 'Catalogue', 'staff' => false],
+                ['href' => 'my_bookings.php', 'label' => 'My Reservations', 'staff' => false],
             ];
         } else {
             $links = [
@@ -523,6 +539,7 @@ if (!function_exists('layout_footer')) {
         $flatpickrCfg = app_flatpickr_settings(layout_cached_config());
         $flatpickrCfgJson = json_encode($flatpickrCfg, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
 
+        echo '<div id="app-busy-overlay" class="app-busy-overlay" aria-hidden="true"><div class="app-busy-card"><div class="spinner-border" aria-hidden="true"></div><strong>Please wait…</strong></div></div>';
         echo '<script src="assets/nav.js"></script>';
         echo '<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>';
         echo '<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/plugins/confirmDate/confirmDate.js"></script>';
@@ -678,6 +695,13 @@ if (!function_exists('layout_footer')) {
                 altInputClass: (input.className ? input.className + ' ' : '') + 'flatpickr-alt-input',
                 parseDate: parseDateFactory(fallbackFormats[pickerType] || []),
                 onOpen: [centerOpenCalendar],
+                onReady: [(_dates, _value, instance) => {
+                    if (!instance || !instance.calendarContainer || instance.calendarContainer.querySelector('.flatpickr-today-action')) return;
+                    const button = document.createElement('button');
+                    button.type = 'button'; button.className = 'flatpickr-today-action'; button.textContent = 'Today';
+                    button.addEventListener('click', () => { instance.setDate(new Date(), true); });
+                    instance.calendarContainer.appendChild(button);
+                }],
             };
             if ((pickerType === 'time' || pickerType === 'datetime') && typeof window.confirmDatePlugin === 'function') {
                 baseOptions.plugins = [
@@ -759,6 +783,23 @@ if (!function_exists('layout_footer')) {
     } else {
         boot();
     }
+})();
+(function () {
+    const overlay = document.getElementById('app-busy-overlay');
+    if (!overlay) return;
+    const show = () => { overlay.classList.add('is-visible'); overlay.setAttribute('aria-hidden', 'false'); };
+    document.addEventListener('submit', (event) => {
+        if (event.defaultPrevented || event.target.hasAttribute('data-no-busy')) return;
+        window.setTimeout(show, 0);
+    });
+    document.addEventListener('click', (event) => {
+        const link = event.target.closest('a[href]');
+        if (!link || link.target === '_blank' || link.hasAttribute('download') || link.dataset.noBusy !== undefined) return;
+        const href = link.getAttribute('href') || '';
+        if (!href || href[0] === '#' || /^(mailto:|tel:|javascript:)/i.test(href)) return;
+        show();
+    });
+    window.addEventListener('pageshow', () => { overlay.classList.remove('is-visible'); overlay.setAttribute('aria-hidden', 'true'); });
 })();
 </script>
 SCRIPT;

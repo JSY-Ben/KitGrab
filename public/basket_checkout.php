@@ -20,6 +20,7 @@ if (empty($basket)) {
 
 $startRaw = $_POST['start_datetime'] ?? '';
 $endRaw   = $_POST['end_datetime'] ?? '';
+$reservationNote = trim((string)($_POST['reservation_note'] ?? ''));
 
 if (!$startRaw || !$endRaw) {
     die('Start and end date/time are required.');
@@ -143,11 +144,11 @@ try {
         INSERT INTO reservations (
             user_name, user_email, user_id,
             asset_id, asset_name_cache,
-            start_datetime, end_datetime, status
+            start_datetime, end_datetime, status, reservation_note
         ) VALUES (
             :user_name, :user_email, :user_id,
             0, :asset_name_cache,
-            :start_datetime, :end_datetime, 'pending'
+            :start_datetime, :end_datetime, 'pending', :reservation_note
         )
     ");
     $insertRes->execute([
@@ -157,6 +158,7 @@ try {
         ':asset_name_cache' => 'Pending checkout',
         ':start_datetime'   => $start,
         ':end_datetime'     => $end,
+        ':reservation_note' => $reservationNote !== '' ? $reservationNote : null,
     ]);
 
     $reservationId = (int)$pdo->lastInsertId();
@@ -247,6 +249,7 @@ try {
             "Start: {$startDisplay}",
             "End: {$endDisplay}",
         ];
+        if ($reservationNote !== '') { $userBody[] = "Reservation note: {$reservationNote}"; }
         if ($isOnBehalfBooking) {
             $userBody[] = "Submitted by: {$submittedByDisplay}";
         }
@@ -259,6 +262,7 @@ try {
             "End: {$endDisplay}",
             "Submitted by: {$submittedByDisplay}",
         ];
+        if ($reservationNote !== '') { $adminBody[] = "Reservation note: {$reservationNote}"; }
 
         $templateVariables = [
             'person_name' => $userName,
@@ -272,6 +276,7 @@ try {
             'staff_reservations_link' => layout_staff_reservations_url($config),
             'staff_name' => $submittedByName !== '' ? $submittedByName : $submittedByEmail,
             'staff_email' => $submittedByEmail,
+            'reservation_note' => $reservationNote,
         ];
 
         $notifiedEmails = [];
