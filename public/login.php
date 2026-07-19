@@ -21,6 +21,7 @@ $msEnabled     = !empty($authCfg['microsoft_oauth_enabled']);
 $showGoogle    = $googleEnabled && !empty($googleCfg['client_id']);
 $showMicrosoft = $msEnabled && !empty($msCfg['client_id']);
 $showLdap      = $ldapEnabled;
+$registrationEnabled = !empty($authCfg['registration_enabled']);
 
 // Show any previous error
 $loginError = $_SESSION['login_error'] ?? '';
@@ -89,6 +90,13 @@ if (!empty($_SESSION['user']['email'])) {
                 Sign in
             </button>
         </form>
+
+        <?php if ($registrationEnabled): ?>
+            <div class="text-center mt-3">
+                <span class="text-muted small">Need an account?</span>
+                <a href="register.php" class="small fw-semibold">Register</a>
+            </div>
+        <?php endif; ?>
 
         <?php if ($showLdap): ?>
             <form method="post" action="login_process.php" class="card p-3 mt-3">

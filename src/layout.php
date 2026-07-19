@@ -149,6 +149,21 @@ if (!function_exists('layout_known_database_upgrades')) {
                     }
                 },
             ],
+            [
+                'version' => '1.2.2',
+                'description' => 'Add user registration and approval support.',
+                'is_applied' => static function (PDO $pdo): bool {
+                    try {
+                        $stmt = $pdo->prepare('SELECT 1 FROM schema_version WHERE version = :version LIMIT 1');
+                        $stmt->execute([':version' => '1.2.2']);
+                        $versionApplied = (bool)$stmt->fetchColumn();
+                        $pdo->query('SELECT is_approved FROM users LIMIT 1');
+                        return $versionApplied;
+                    } catch (Throwable $e) {
+                        return false;
+                    }
+                },
+            ],
         ];
     }
 }

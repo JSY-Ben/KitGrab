@@ -230,6 +230,10 @@ if ($provider === 'local') {
         $redirectWithError('Incorrect email/username or password.');
     }
 
+    if (!empty($authCfg['registration_requires_approval']) && isset($user['is_approved']) && !(bool)$user['is_approved']) {
+        $redirectWithError('Your account is waiting for administrator approval.');
+    }
+
     $displayName = trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''));
     if ($displayName === '') {
         $displayName = $user['email'] ?? '';

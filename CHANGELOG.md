@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.2.2 - User registration
+
+- Added optional public registration for local user accounts.
+- Added configurable administrator approval for newly registered accounts.
+- Added pending-account visibility and approval controls to the Users page.
+
+Run the browser upgrade after installing this release to add account approval status storage.
+
 ## v1.2.1 - Password recovery
 
 - Added a forgotten-password flow for local accounts.

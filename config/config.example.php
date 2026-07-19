@@ -41,6 +41,8 @@ return [
         'ldap_enabled' => true,
         'google_oauth_enabled' => false,
         'microsoft_oauth_enabled' => false,
+        'registration_enabled' => false,
+        'registration_requires_approval' => true,
         // Optional role mappings for external auth providers
         'admin_group_cn' => [],
         'checkout_group_cn' => [],

@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
     is_staff TINYINT(1) NOT NULL DEFAULT 0,
     password_hash VARCHAR(255) DEFAULT NULL,
     auth_source VARCHAR(32) NOT NULL DEFAULT 'local',
+    is_approved TINYINT(1) NOT NULL DEFAULT 1,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (id),
@@ -312,4 +313,5 @@ VALUES ('0.10.0 (Beta)'),
        ('1.0.0'),
        ('1.0.5'),
        ('1.2.0'),
-       ('1.2.1');
+       ('1.2.1'),
+       ('1.2.2');

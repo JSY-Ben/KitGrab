@@ -205,7 +205,7 @@ function upgrade_stream_database_backup(PDO $pdo, string $databaseName, string $
     echo "COMMIT;\n";
 }
 
-$targetVersion = '1.2.1';
+$targetVersion = '1.2.2';
 $configExists = is_file($configPath) || is_file($legacyConfigPath);
 $messages = [];
 $errors = [];
@@ -436,6 +436,24 @@ $migrations = [
                         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
+        },
+    ],
+    [
+        'version' => '1.2.2',
+        'label' => 'Add user registration and approval support',
+        'is_applied' => static function (PDO $pdo, array $appliedVersions): bool {
+            try {
+                $pdo->query('SELECT is_approved FROM users LIMIT 1');
+                return isset($appliedVersions['1.2.2']);
+            } catch (Throwable $e) {
+                return false;
+            }
+        },
+        'run' => static function (PDO $pdo): void {
+            $column = $pdo->query("SHOW COLUMNS FROM users LIKE 'is_approved'")->fetch(PDO::FETCH_ASSOC);
+            if (!$column) {
+                $pdo->exec('ALTER TABLE users ADD COLUMN is_approved TINYINT(1) NOT NULL DEFAULT 1 AFTER auth_source');
+            }
         },
     ],
 ];

@@ -428,6 +428,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $auth['ldap_enabled']        = isset($_POST['auth_ldap_enabled']);
     $auth['google_oauth_enabled'] = isset($_POST['auth_google_enabled']);
     $auth['microsoft_oauth_enabled'] = isset($_POST['auth_microsoft_enabled']);
+    $auth['registration_enabled'] = isset($_POST['auth_registration_enabled']);
+    $auth['registration_requires_approval'] = isset($_POST['auth_registration_requires_approval']);
     $adminCnsRaw     = $post('admin_group_cn', '');
     $checkoutCnsRaw  = $post('checkout_group_cn', '');
     $adminGroupCns    = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $adminCnsRaw))));
@@ -951,7 +953,7 @@ if (empty($reservationBlackoutRows)) {
 }
 
 $settingsTabRaw = strtolower(trim((string)($_POST['settings_tab'] ?? $_GET['settings_tab'] ?? 'frontend')));
-$settingsTab = in_array($settingsTabRaw, ['frontend', 'backend', 'permissions', 'notifications'], true)
+$settingsTab = in_array($settingsTabRaw, ['frontend', 'backend', 'users', 'permissions', 'notifications'], true)
     ? $settingsTabRaw
     : 'frontend';
 $selectedTimezone = (string)$cfg(['app', 'timezone'], 'Europe/Jersey');
@@ -1030,6 +1032,14 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                 data-settings-tab="backend"
                                 aria-selected="<?= $settingsTab === 'backend' ? 'true' : 'false' ?>">
                             Backend Settings
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button type="button"
+                                class="nav-link <?= $settingsTab === 'users' ? 'active' : '' ?>"
+                                data-settings-tab="users"
+                                aria-selected="<?= $settingsTab === 'users' ? 'true' : 'false' ?>">
+                            User Settings
                         </button>
                     </li>
                     <li class="nav-item">
@@ -1306,6 +1316,43 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                         <div class="d-flex justify-content-between align-items-center mt-3">
                             <div class="small text-muted" id="smtp-test-result"></div>
                             <button type="button" class="btn btn-outline-primary btn-sm" data-test-action="test_smtp" data-target="smtp-test-result">Test SMTP</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12<?= $settingsTab === 'users' ? '' : ' d-none' ?>" data-settings-group="users">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title mb-1">User registration</h5>
+                        <p class="text-muted small mb-3">Control whether visitors can create local user accounts.</p>
+
+                        <div class="border rounded p-3 mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input"
+                                       type="checkbox"
+                                       name="auth_registration_enabled"
+                                       id="auth_registration_enabled"
+                                    <?= $cfg(['auth', 'registration_enabled'], false) ? 'checked' : '' ?>>
+                                <label class="form-check-label fw-semibold" for="auth_registration_enabled">
+                                    Enable user registration
+                                </label>
+                            </div>
+                            <div class="form-text">Adds a registration link to the sign-in page and allows visitors to create local accounts.</div>
+                        </div>
+
+                        <div class="border rounded p-3">
+                            <div class="form-check">
+                                <input class="form-check-input"
+                                       type="checkbox"
+                                       name="auth_registration_requires_approval"
+                                       id="auth_registration_requires_approval"
+                                    <?= $cfg(['auth', 'registration_requires_approval'], true) ? 'checked' : '' ?>>
+                                <label class="form-check-label fw-semibold" for="auth_registration_requires_approval">
+                                    Require administrator approval for new accounts
+                                </label>
+                            </div>
+                            <div class="form-text">Newly registered users cannot sign in until an administrator approves them from the Users page.</div>
                         </div>
                     </div>
                 </div>

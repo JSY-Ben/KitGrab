@@ -31,9 +31,9 @@ if ($exportType === 'users') {
     header('Content-Type: text/csv; charset=UTF-8');
     header('Content-Disposition: attachment; filename="users.csv"');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['id', 'first_name', 'last_name', 'email', 'username', 'auth_source', 'created_at']);
+    fputcsv($out, ['id', 'first_name', 'last_name', 'email', 'username', 'auth_source', 'is_approved', 'created_at']);
     $rows = $pdo->query('
-        SELECT id, first_name, last_name, email, username, is_admin, is_staff, auth_source, created_at
+        SELECT id, first_name, last_name, email, username, is_admin, is_staff, auth_source, is_approved, created_at
           FROM users
          ORDER BY first_name ASC, last_name ASC, email ASC
     ')->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -45,6 +45,7 @@ if ($exportType === 'users') {
             $row['email'] ?? '',
             $row['username'] ?? '',
             $row['auth_source'] ?? 'local',
+            !empty($row['is_approved']) ? '1' : '0',
             $row['created_at'] ?? '',
         ]);
     }
@@ -222,6 +223,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = $e->getMessage();
             }
         }
+    } elseif ($action === 'approve_user') {
+        $approveId = (int)($_POST['user_id'] ?? 0);
+        if ($approveId <= 0) {
+            $errors[] = 'Invalid user to approve.';
+        } else {
+            try {
+                $stmt = $pdo->prepare('UPDATE users SET is_approved = 1 WHERE id = :id');
+                $stmt->execute([':id' => $approveId]);
+                $messages[] = $stmt->rowCount() > 0 ? 'User approved.' : 'User was already approved.';
+            } catch (Throwable $e) {
+                $errors[] = 'Approval failed: ' . $e->getMessage();
+            }
+        }
     } elseif ($action === 'delete_user') {
         $deleteId = (int)($_POST['user_id'] ?? 0);
         if ($deleteId <= 0) {
@@ -335,7 +349,7 @@ $groups = [];
 $userGroups = [];
 try {
     $stmt = $pdo->query('
-        SELECT id, first_name, last_name, email, username, is_admin, is_staff, auth_source, created_at
+        SELECT id, first_name, last_name, email, username, is_admin, is_staff, auth_source, is_approved, created_at
           FROM users
          ORDER BY first_name ASC, last_name ASC, email ASC
     ');
@@ -466,6 +480,7 @@ if ($groupsAvailable) {
                                     <th>Username</th>
                                     <th>Role</th>
                                     <th>Source</th>
+                                    <th>Status</th>
                                     <th>Groups</th>
                                     <th>Created</th>
                                     <th></th>
@@ -514,9 +529,23 @@ if ($groupsAvailable) {
                                         <td><?= h($user['username'] ?? '') ?></td>
                                         <td><?= h($roleLabel) ?></td>
                                         <td><?= h($sourceLabel) ?></td>
+                                        <td>
+                                            <?php if (!empty($user['is_approved'])): ?>
+                                                <span class="badge text-bg-success">Approved</span>
+                                            <?php else: ?>
+                                                <span class="badge text-bg-warning">Pending approval</span>
+                                            <?php endif; ?>
+                                        </td>
                                         <td><?= $groupLabelText !== '' ? h($groupLabelText) : '<span class="text-muted">None</span>' ?></td>
                                         <td><?= h($createdAt) ?></td>
                                         <td class="text-end">
+                                            <?php if (empty($user['is_approved'])): ?>
+                                                <form method="post" class="d-inline">
+                                                    <input type="hidden" name="action" value="approve_user">
+                                                    <input type="hidden" name="user_id" value="<?= (int)$user['id'] ?>">
+                                                    <button type="submit" class="btn btn-sm btn-outline-success">Approve</button>
+                                                </form>
+                                            <?php endif; ?>
                                             <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editUserModal-<?= (int)$user['id'] ?>">Edit</button>
                                             <form method="post" class="d-inline" onsubmit="return confirm('Delete this user?');">
                                                 <input type="hidden" name="action" value="delete_user">
