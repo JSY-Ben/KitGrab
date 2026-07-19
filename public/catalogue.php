@@ -1578,7 +1578,7 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
             <?php endif; ?>
             <input type="hidden" name="prefetch" value="1">
             <div class="row g-3 align-items-end">
-                <div class="col-md-5">
+                <div class="col-md-6">
                     <label class="form-label fw-semibold">Start date &amp; time</label>
                     <input type="datetime-local"
                            name="start_datetime"
@@ -1586,18 +1586,13 @@ if (!empty($allowedCategoryMap) && !empty($categories)) {
                            class="form-control form-control-lg"
                            value="<?= h($windowStartRaw) ?>">
                 </div>
-                <div class="col-md-5">
+                <div class="col-md-6">
                     <label class="form-label fw-semibold">End date &amp; time</label>
                     <input type="datetime-local"
                            name="end_datetime"
                            id="catalogue_end_datetime"
                            class="form-control form-control-lg"
                            value="<?= h($windowEndRaw) ?>">
-                </div>
-                <div class="col-12 col-md-2 d-grid mb-2 mb-md-0">
-                    <button class="btn btn-primary btn-lg" type="button" id="catalogue-today-btn">
-                        Today
-                    </button>
                 </div>
             </div>
             <?php if ($windowError !== ''): ?>
@@ -2095,7 +2090,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const windowStartInput = document.getElementById('catalogue_start_datetime');
     const windowEndInput = document.getElementById('catalogue_end_datetime');
     const windowForm = document.getElementById('catalogue-window-form');
-    const todayBtn = document.getElementById('catalogue-today-btn');
     const windowScrollRestoreKey = 'kitgrab:catalogueWindowScrollY';
     let windowSubmitInFlight = false;
     let lastSubmittedWindow = (windowStartInput && windowEndInput)
@@ -2293,18 +2287,6 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
         input.value = value;
-    }
-
-    function setTodayWindow() {
-        if (!windowStartInput || !windowEndInput) return;
-        const now = new Date();
-        const tomorrow = new Date(now);
-        tomorrow.setDate(now.getDate() + 1);
-        tomorrow.setHours(9, 0, 0, 0);
-        setDatetimeInputValue(windowStartInput, toLocalDatetimeValue(now));
-        setDatetimeInputValue(windowEndInput, toLocalDatetimeValue(tomorrow));
-        showLoadingOverlay();
-        maybeSubmitWindow();
     }
 
     function normalizeWindowEnd() {
@@ -2909,9 +2891,6 @@ document.addEventListener('DOMContentLoaded', function () {
             saveWindowScrollPosition();
             showLoadingOverlay();
         });
-    }
-    if (todayBtn) {
-        todayBtn.addEventListener('click', setTodayWindow);
     }
     document.addEventListener('click', function (event) {
         if (!windowStartInput || !windowEndInput) return;
