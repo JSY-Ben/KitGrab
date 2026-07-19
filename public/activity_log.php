@@ -57,9 +57,42 @@ $metadataLabels = [
     'items' => 'Items',
 ];
 
-function format_activity_metadata_value(array $metadata, array $labelMap, ?DateTimeZone $tz = null): array
+function format_activity_metadata_value(array $metadata, array $labelMap, ?DateTimeZone $tz = null, array $userNames = []): array
 {
     $lines = [];
+
+    if (isset($metadata['notes'])) {
+        $notes = $metadata['notes'];
+        if (is_string($notes)) {
+            $decodedNotes = json_decode($notes, true);
+            if (is_array($decodedNotes)) {
+                $notes = $decodedNotes;
+            }
+        }
+
+        if (is_array($notes)) {
+            $noteRows = array_keys($notes) === range(0, count($notes) - 1) ? $notes : [$notes];
+            $formattedNotes = [];
+            foreach ($noteRows as $noteRow) {
+                if (!is_array($noteRow)) {
+                    continue;
+                }
+                $assetLabel = trim((string)($noteRow['label'] ?? $noteRow['asset_name'] ?? ''));
+                $note = trim((string)($noteRow['note'] ?? ''));
+                if ($assetLabel !== '' && $note !== '') {
+                    $formattedNotes[] = 'Asset: ' . $assetLabel . ' — Note: ' . $note;
+                } elseif ($note !== '') {
+                    $formattedNotes[] = 'Note: ' . $note;
+                }
+            }
+
+            if ($formattedNotes !== []) {
+                $lines[] = 'Notes:';
+                array_push($lines, ...$formattedNotes);
+                unset($metadata['notes'], $metadata['assets']);
+            }
+        }
+    }
 
     // A labelled asset is clearer than showing its internal database ID as well.
     if (isset($metadata['label']) && trim((string)$metadata['label']) !== '') {
@@ -69,11 +102,16 @@ function format_activity_metadata_value(array $metadata, array $labelMap, ?DateT
     foreach ($metadata as $key => $value) {
         $label = $labelMap[$key] ?? ucwords(str_replace('_', ' ', (string)$key));
 
+        if ($key === 'user_id' && isset($userNames[(string)$value])) {
+            $label = 'User';
+            $value = $userNames[(string)$value];
+        }
+
         // Some older audit entries contain a JSON object inside a string field.
         if (is_string($value) && ($value[0] ?? '') === '{') {
             $nested = json_decode($value, true);
             if (is_array($nested)) {
-                array_push($lines, ...format_activity_metadata_value($nested, $labelMap, $tz));
+                array_push($lines, ...format_activity_metadata_value($nested, $labelMap, $tz, $userNames));
                 continue;
             }
         }
@@ -82,13 +120,13 @@ function format_activity_metadata_value(array $metadata, array $labelMap, ?DateT
             $nestedLines = [];
             foreach ($value as $item) {
                 if (is_array($item)) {
-                    array_push($nestedLines, ...format_activity_metadata_value($item, $labelMap, $tz));
+                    array_push($nestedLines, ...format_activity_metadata_value($item, $labelMap, $tz, $userNames));
                 }
             }
 
             $isAssociative = $value !== [] && array_keys($value) !== range(0, count($value) - 1);
             if ($isAssociative && $nestedLines === []) {
-                $nestedLines = format_activity_metadata_value($value, $labelMap, $tz);
+                $nestedLines = format_activity_metadata_value($value, $labelMap, $tz, $userNames);
             }
 
             if ($nestedLines !== []) {
@@ -122,7 +160,7 @@ function format_activity_metadata_value(array $metadata, array $labelMap, ?DateT
     return $lines;
 }
 
-function format_activity_metadata(?string $metadataJson, array $labelMap, ?DateTimeZone $tz = null): array
+function format_activity_metadata(?string $metadataJson, array $labelMap, ?DateTimeZone $tz = null, array $userNames = []): array
 {
     if (!$metadataJson) {
         return [];
@@ -133,7 +171,7 @@ function format_activity_metadata(?string $metadataJson, array $labelMap, ?DateT
         return [];
     }
 
-    return format_activity_metadata_value($decoded, $labelMap, $tz);
+    return format_activity_metadata_value($decoded, $labelMap, $tz, $userNames);
 }
 
 $qRaw    = trim($_GET['q'] ?? '');
@@ -172,6 +210,7 @@ $activityLogError = '';
 $totalRows = 0;
 $totalPages = 1;
 $eventTypeOptions = [];
+$userNames = [];
 try {
     $eventStmt = $pdo->query('SELECT DISTINCT event_type FROM activity_log ORDER BY event_type ASC');
     $eventTypeOptions = array_values(array_filter(array_map('trim', $eventStmt->fetchAll(PDO::FETCH_COLUMN))));
@@ -238,6 +277,28 @@ try {
     $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
     $stmt->execute();
     $activityLogRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $userIds = [];
+    foreach ($activityLogRows as $activityRow) {
+        $rowMetadata = json_decode((string)($activityRow['metadata'] ?? ''), true);
+        if (is_array($rowMetadata) && isset($rowMetadata['user_id']) && (int)$rowMetadata['user_id'] > 0) {
+            $userIds[(int)$rowMetadata['user_id']] = (int)$rowMetadata['user_id'];
+        }
+    }
+    if ($userIds !== []) {
+        $placeholders = implode(',', array_fill(0, count($userIds), '?'));
+        $userStmt = $pdo->prepare("SELECT id, first_name, last_name, email, username FROM users WHERE id IN ($placeholders)");
+        $userStmt->execute(array_values($userIds));
+        foreach ($userStmt->fetchAll(PDO::FETCH_ASSOC) as $userRow) {
+            $name = trim((string)($userRow['first_name'] ?? '') . ' ' . (string)($userRow['last_name'] ?? ''));
+            if ($name === '') {
+                $name = trim((string)($userRow['email'] ?? $userRow['username'] ?? ''));
+            }
+            if ($name !== '') {
+                $userNames[(string)$userRow['id']] = $name;
+            }
+        }
+    }
 } catch (Throwable $e) {
     $activityLogError = $e->getMessage();
 }
@@ -399,7 +460,7 @@ try {
                                     }
 
                                     $metadataText = trim((string)($row['metadata'] ?? ''));
-                                    $metadataLines = format_activity_metadata($metadataText, $metadataLabels, $tz);
+                                    $metadataLines = format_activity_metadata($metadataText, $metadataLabels, $tz, $userNames);
                                     $subjectDetailHtml = '';
                                     if ($subjectLabel !== '' && ($row['subject_type'] ?? '') === 'reservation' && $subjectId !== '') {
                                         $reservationId = (int)$subjectId;
