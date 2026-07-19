@@ -456,6 +456,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $auth['registration_requires_approval'] = isset($_POST['auth_registration_requires_approval']);
     $auth['users_can_edit_profile'] = isset($_POST['auth_users_can_edit_profile']);
     $auth['user_photos_enabled'] = isset($_POST['auth_user_photos_enabled']);
+    $defaultRegistrationGroupIds = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['auth_registration_default_group_ids'] ?? [])), static function (int $id): bool { return $id > 0; })));
+    $auth['registration_default_group_ids'] = $defaultRegistrationGroupIds;
     $adminCnsRaw     = $post('admin_group_cn', '');
     $checkoutCnsRaw  = $post('checkout_group_cn', '');
     $adminGroupCns    = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $adminCnsRaw))));
@@ -1385,6 +1387,18 @@ $effectiveLogoUrl = $configuredLogoUrl !== '' ? $configuredLogoUrl : layout_defa
                                 </label>
                             </div>
                             <div class="form-text">Newly registered users cannot sign in until an administrator approves them from the Users page.</div>
+                        </div>
+
+                        <div class="border rounded p-3 mt-3">
+                            <label class="form-label fw-semibold" for="auth_registration_default_group_ids">Default groups for registered users</label>
+                            <?php $registrationDefaultGroupIds = array_map('intval', (array)$cfg(['auth', 'registration_default_group_ids'], [])); ?>
+                            <select class="form-select" id="auth_registration_default_group_ids" name="auth_registration_default_group_ids[]" multiple size="<?= max(3, min(8, count($permissionGroups))) ?>">
+                                <?php foreach ($permissionGroups as $registrationGroup): ?>
+                                    <?php $registrationGroupId = (int)($registrationGroup['id'] ?? 0); ?>
+                                    <option value="<?= $registrationGroupId ?>" <?= in_array($registrationGroupId, $registrationDefaultGroupIds, true) ? 'selected' : '' ?>><?= h((string)($registrationGroup['name'] ?? ('Group #' . $registrationGroupId))) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <?php if (empty($permissionGroups)): ?><div class="form-text text-warning">No user groups are available. Create a group first, then return here.</div><?php else: ?><div class="form-text">Hold Ctrl (Windows/Linux) or Command (macOS) to choose multiple groups. Leave all unselected for no default group.</div><?php endif; ?>
                         </div>
                     </div>
                 </div>

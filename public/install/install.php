@@ -362,6 +362,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installLocked) {
         $newConfig['auth']['microsoft_oauth_enabled']  = false;
         $newConfig['auth']['registration_enabled'] = false;
         $newConfig['auth']['registration_requires_approval'] = true;
+        $newConfig['auth']['registration_default_group_ids'] = [];
         $newConfig['auth']['users_can_edit_profile'] = false;
         $newConfig['auth']['user_photos_enabled'] = false;
         $newConfig['google_oauth'] = [

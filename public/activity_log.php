@@ -55,6 +55,7 @@ $metadataLabels = [
     'user_name' => 'User name',
     'user_email' => 'User email',
     'approval_status' => 'Approval status',
+    'default_group_ids' => 'Default group IDs',
     'start' => 'Start',
     'end' => 'End',
     'booked_for' => 'Booked for',

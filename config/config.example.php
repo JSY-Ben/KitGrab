@@ -43,6 +43,7 @@ return [
         'microsoft_oauth_enabled' => false,
         'registration_enabled' => false,
         'registration_requires_approval' => true,
+        'registration_default_group_ids' => [],
         'users_can_edit_profile' => false,
         'user_photos_enabled' => false,
         // Optional role mappings for external auth providers

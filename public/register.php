@@ -5,6 +5,7 @@ require_once SRC_PATH . '/layout.php';
 require_once SRC_PATH . '/email.php';
 require_once SRC_PATH . '/activity_log.php';
 require_once SRC_PATH . '/user_profile.php';
+require_once SRC_PATH . '/group_helpers.php';
 
 session_start();
 $config = load_config();
@@ -77,6 +78,14 @@ if ($registrationEnabled && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':is_approved' => $requiresApproval ? 0 : 1,
             ]);
             $newUserId = (int)$pdo->lastInsertId();
+            $defaultGroupIds = group_normalize_ids($authConfig['registration_default_group_ids'] ?? []);
+            if (!empty($defaultGroupIds)) {
+                try {
+                    if (group_tables_exist($pdo)) group_replace_user_memberships($pdo, $newUserId, $defaultGroupIds);
+                } catch (Throwable $e) {
+                    error_log(layout_app_name($config) . ' could not assign registration default groups: ' . $e->getMessage());
+                }
+            }
             if (!empty($authConfig['user_photos_enabled']) && isset($_FILES['profile_photo']) && is_array($_FILES['profile_photo'])) {
                 $photoPath = user_profile_photo_upload($_FILES['profile_photo'], $newUserId, $photoErrors);
                 if ($photoPath !== null) {
@@ -96,6 +105,7 @@ if ($registrationEnabled && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 'metadata' => [
                     'username' => $username,
                     'approval_status' => $requiresApproval ? 'pending' : 'approved',
+                    'default_group_ids' => $defaultGroupIds,
                 ],
             ]);
             layout_notify_new_user_created([
